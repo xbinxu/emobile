@@ -16,10 +16,11 @@ cd ebin
 ECHO="echo -e"
 
 # start control and backup control nodes, see "./functions"
-start_ctl_nodes
+start_ctl_nodes 4194304 2048
 
 #start mobile connection nodes, see "./functions"
-start_conn_nodes
+start_conn_nodes 1572864 1048576
 
 #start server push nodes, see "./functions"
-start_push_nodes
+start_push_nodes 4096 2048
+

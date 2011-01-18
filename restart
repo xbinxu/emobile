@@ -24,31 +24,31 @@ else
 fi
 
 if [ $restart_type = "all" -o $restart_type = "push" ]; then 
-	restart_push_nodes
+	restart_push_nodes 4096 2048
 fi
 
 if [ $restart_type = "all" -o $restart_type = "conn" ]; then 
-	restart_conn_nodes
+	restart_conn_nodes 1572864 1048576
 fi
 
 if [ $restart_type = "all" -o $restart_type = "ctl" ]; then
-	restart_ctl_nodes
+	restart_ctl_nodes  4194304 2048
 fi
 
 if [ $restart_type = "ctlnode" ]; then
-	restart_ctl_node $2
+	restart_ctl_node $2 4194304 2048
 fi
 
 if [ $restart_type = "backctlnode" ]; then
-	restart_backup_ctl_node $2
+	restart_backup_ctl_node $2 4194304 2048
 fi
 
 if [ $restart_type = "connnode" ]; then
-	restart_conn_node $2
+	restart_conn_node $2 1572864 1048576
 fi
 
 if [ $restart_type = "pushnode" ]; then
-	restart_push_node $2
+	restart_push_node $2 4096 2048 
 fi
 
 

@@ -27,6 +27,7 @@ start_node ()
 		SASL_LOG_DIR="\"error_log/""$2""_sasl.log\""
 
 		erl +K true +P $1 -env ERL_MAX_PORTS $4 -boot start_sasl \
+			-sasl errlog_type error \
 			-sasl sasl_error_logger "{file,  $SASL_LOG_DIR}" \
 			-name $2 -setcookie emobile.cookie -noshell -detached \
 			-eval "application:start($3)" &
@@ -61,25 +62,21 @@ start_ctl_nodes ()
 	fi
 
 	HostName=`hostname`
-	E_PROCESS_NUM=409600
-	E_PORT_NUM=2048
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_back_nodes(\"$HostName\")" -s init stop`
 	for node in $Nodes
 	do
 		$ECHO "starting backup control node \033[34m$node""@""$HostName\033[0m ..."
-		start_node $E_PROCESS_NUM $node emctl $E_PORT_NUM
+		start_node $1 $node emctl $2
 	done
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_nodes(\"$HostName\")" -s init stop`
 	for node in $Nodes
 	do
 		$ECHO "starting control node \033[34m$node""@""$HostName\033[0m ..."
-		start_node $E_PROCESS_NUM $node emctl $E_PORT_NUM
+		start_node $1 $node emctl $2
 	done
 
-	unset E_PROCESS_NUM
-	unset E_PORT_NUM
 	unset Nodes
 	unset HostName
 }
@@ -123,8 +120,6 @@ restart_ctl_nodes ()
 	fi
 
 	HostName=`hostname`
-	E_PROCESS_NUM=409600
-	E_PORT_NUM=2048
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_nodes(\"$HostName\")" -s init stop`
 	for node in $Nodes
@@ -136,7 +131,7 @@ restart_ctl_nodes ()
 	for node in $Nodes
 	do
 		$ECHO "starting control node \033[34m$node""@""$HostName\033[0m ..."
-		start_node $E_PROCESS_NUM $node emctl $E_PORT_NUM
+		start_node $1 $node emctl $2
 	done
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_back_nodes(\"$HostName\")" -s init stop`
@@ -149,13 +144,11 @@ restart_ctl_nodes ()
 	for node in $Nodes
 	do
 		$ECHO "starting backup control node \033[34m$node""@""$HostName\033[0m ..."
-		start_node $E_PROCESS_NUM $node emctl $E_PORT_NUM
+		start_node $1 $node emctl $2
 	done
 
 	unset Nodes
 	unset HostName
-	unset E_PROCESS_NUM
-	unset E_PORT_NUM
 }
 
 #restart single ctl node if configured, see "emobile.cfg" in ./ebin directory
@@ -172,8 +165,6 @@ restart_ctl_node ()
 	fi 
 
 	HostName=`hostname`
-	E_PROCESS_NUM=409600
-	E_PORT_NUM=2048
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_nodes(\"$HostName\")" -s init stop`
 	for node in $Nodes
@@ -192,13 +183,11 @@ restart_ctl_node ()
 	stop_node $1
 	sleep 2
 	$ECHO "starting control node \033[34m$1""@""$HostName\033[0m ..."
-	start_node $E_PROCESS_NUM $1 emctl $E_PORT_NUM
+	start_node $2 $1 emctl $3
 
 	unset HostName
 	unset Nodes
 	unset find_node
-	unset E_PROCESS_NUM
-	unset E_PORT_NUM
 }
 
 #restart single backup ctl node if configured, see "emobile.cfg" in ./ebin directory
@@ -215,8 +204,6 @@ restart_backup_ctl_node ()
 	fi 
 
 	HostName=`hostname`
-	E_PROCESS_NUM=409600
-	E_PORT_NUM=2048
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_back_nodes(\"$HostName\")" -s init stop`
 	for node in $Nodes
@@ -235,13 +222,11 @@ restart_backup_ctl_node ()
 	stop_node $1
 	sleep 2
 	$ECHO "starting backup control node \033[34m$1""@""$HostName\033[0m ..."
-	start_node $E_PROCESS_NUM $1 emctl $E_PORT_NUM
+	start_node $2 $1 emctl $3
 
 	unset HostName
 	unset Nodes
 	unset find_node
-	unset E_PROCESS_NUM
-	unset E_PORT_NUM
 }
 
 
@@ -260,7 +245,7 @@ start_conn_nodes ()
 	for node in $Nodes
 	do
 		$ECHO "starting mobile connection node \033[34m$node""@""$HostName\033[0m ..."
-		start_node 204800 $node emconn 102400
+		start_node $1 $node emconn $2
 	done
 
 	unset Nodes
@@ -310,7 +295,7 @@ restart_conn_nodes ()
 	for node in $Nodes
 	do
 		$ECHO "starting mobile connection node \033[34m$node""@""$HostName\033[0m ..."
-		start_node 204800 $node emconn 102400
+		start_node $1 $node emconn $2
 	done
 
 	unset Nodes
@@ -349,7 +334,7 @@ restart_conn_node ()
 	stop_node $1
 	sleep 2
 	$ECHO "starting mobile connection node \033[34m$1""@""$HostName\033[0m ..."
-	start_node 204800 $1 emconn 102400
+	start_node $2 $1 emconn $3
 
 	unset HostName
 	unset Nodes
@@ -372,7 +357,7 @@ start_push_nodes ()
 	for node in $Nodes
 	do
 		$ECHO "starting push node \033[34m$node""@""$HostName\033[0m ..."
-		start_node 10240 $node empush 2048
+		start_node $1 $node empush $2
 	done 
 
 	unset Nodes
@@ -422,7 +407,7 @@ restart_push_nodes ()
 	for node in $Nodes
 	do
 		$ECHO "starting push node \033[34m$node""@""$HostName\033[0m ..."
-		start_node 10240 $node empush 2048
+		start_node $1 $node empush $2
 	done 
 
 	unset Nodes
@@ -461,7 +446,7 @@ restart_push_node ()
 	stop_node $1
 	sleep 2
 	$ECHO "starting push node \033[34m$1""@""$HostName\033[0m ..."
-	start_node 10240 $1 empush 2048
+	start_node $2 $1 empush $3
 
 	unset HostName
 	unset Nodes
