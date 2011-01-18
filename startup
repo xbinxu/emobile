@@ -7,20 +7,44 @@ if [ ! -d ebin ]; then
 	exit 1
 fi
 
+HostName=`hostname`
+ECHO="echo -e"
+CtlNode_ProcessNum=4194304
+CtlNode_PortNum=2048
+ConnNode_ProcessNum=1572864
+ConnNode_PortNum=1048576
+PushNode_ProcessNum=4096
+PushNode_PortNum=2048
+
+
+
 #import functions
 . ./functions
 
 #cd beam directory
 cd ebin
 
-ECHO="echo -e"
-
-# start control and backup control nodes, see "./functions"
-start_ctl_nodes 4194304 2048
+# start co
+ntrol and backup control nodes, see "./functions"
+start_ctl_nodes $CtlNode_ProcessNum $CtlNode_PortNum
 
 #start mobile connection nodes, see "./functions"
-start_conn_nodes 1572864 1048576
+start_conn_nodes $ConnNode_ProcessNum $ConnNode_PortNum
 
 #start server push nodes, see "./functions"
-start_push_nodes 4096 2048
+start_push_nodes $PushNode_ProcessNum $PushNode_PortNum
+
+
+
+
+
+
+unset HostName
+unset ECHO
+unset CtlNode_ProcessNum
+unset CtlNode_PortNum
+unset ConnNode_ProcessNum
+unset ConnNode_PortNum
+unset PushNode_ProcessNum
+unset PushNode_PortNum
 

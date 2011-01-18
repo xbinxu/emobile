@@ -11,6 +11,9 @@ cd ebin
 stop_push_nodes
 stop_conn_nodes
 stop_ctl_nodes
+
+unset HostName
+unset ECHO
    
 
    

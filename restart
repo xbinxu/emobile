@@ -10,6 +10,13 @@ fi
 #get server host name
 HostName=`hostname`
 ECHO="echo -e"
+CtlNode_ProcessNum=4194304
+CtlNode_PortNum=2048
+ConnNode_ProcessNum=1572864
+ConnNode_PortNum=1048576
+PushNode_ProcessNum=4096
+PushNode_PortNum=2048
+
 
 #import functions
 . ./functions
@@ -24,35 +31,42 @@ else
 fi
 
 if [ $restart_type = "all" -o $restart_type = "push" ]; then 
-	restart_push_nodes 4096 2048
-fi
+	restart_push_nodes $PushNode_ProcessNum $PushNode_PortNum
 
 if [ $restart_type = "all" -o $restart_type = "conn" ]; then 
-	restart_conn_nodes 1572864 1048576
+	restart_conn_nodes $ConnNode_ProcessNum $ConnNode_PortNum
 fi
 
 if [ $restart_type = "all" -o $restart_type = "ctl" ]; then
-	restart_ctl_nodes  4194304 2048
+	restart_ctl_nodes  $CtlNode_ProcessNum $CtlNode_PortNum
 fi
 
 if [ $restart_type = "ctlnode" ]; then
-	restart_ctl_node $2 4194304 2048
+	restart_ctl_node $2 $CtlNode_ProcessNum $CtlNode_PortNum
 fi
 
 if [ $restart_type = "backctlnode" ]; then
-	restart_backup_ctl_node $2 4194304 2048
+	restart_backup_ctl_node $2 $CtlNode_ProcessNum $CtlNode_PortNum
 fi
 
 if [ $restart_type = "connnode" ]; then
-	restart_conn_node $2 1572864 1048576
+	restart_conn_node $2 $ConnNode_ProcessNum $ConnNode_PortNum
 fi
 
 if [ $restart_type = "pushnode" ]; then
-	restart_push_node $2 4096 2048 
+	restart_push_node $2 $PushNode_ProcessNum $PushNode_PortNum
 fi
 
 
 unset HostName
 unset restart_type
+unset ECHO
+unset CtlNode_ProcessNum
+unset CtlNode_PortNum
+unset ConnNode_ProcessNum
+unset ConnNode_PortNum
+unset PushNode_ProcessNum
+unset PushNode_PortNum
+
 
 
