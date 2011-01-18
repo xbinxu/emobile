@@ -1,0 +1,472 @@
+#!/bin/sh
+
+start_node () 
+{
+	if [ ! -f emobile.cfg -o ! -f $3.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running start_node function\033[0m"
+		return 1
+	fi
+
+	if [ $# -lt 4 ]; then
+		$ECHO "\033[31musage: start_node Num_Processes NodeName AppName Num_Ports \033[0m"
+		return 1
+	fi
+
+	if [ ! -d error_log ]; then
+		mkdir error_log
+	fi
+
+	PING=`erl -name admin -setcookie emobile.cookie -noshell -eval "case net_adm:ping($2@$HostName) of \
+                                                                            pong -> io:format("\"ok\""); \
+                                                                            pang -> io:format("\"error\"") \
+									end" -s init stop`
+
+	if [ $PING = "ok" ]; then
+		$ECHO "node: \033[34m$2@$HostName\033[0m is already running, skip it"
+	else
+		SASL_LOG_DIR="\"error_log/""$2""_sasl.log\""
+
+		erl +K true +P $1 -env ERL_MAX_PORTS $4 -boot start_sasl \
+			-sasl sasl_error_logger "{file,  $SASL_LOG_DIR}" \
+			-name $2 -setcookie emobile.cookie -noshell -detached \
+			-eval "application:start($3)" &
+	fi
+}
+
+stop_node () 
+{
+	if [ $# -lt 1 ]; then
+		$ECHO "\033[31musage: stop_node NodeName\033[0m"
+		return 1
+	fi
+
+	PING=`erl -name admin -setcookie emobile.cookie -noshell -eval "case net_adm:ping($1@$HostName) of \
+                                                                            pong -> io:format("\"ok\""); \
+                                                                            pang -> io:format("\"error\"") \
+                                                                    end" -s init stop`
+
+	if [ $PING = "ok" ]; then
+		erl -name emobileadmin -setcookie emobile.cookie -noshell -eval "rpc:call($1@$HostName, init, stop, [])" -s init stop
+	else
+		$ECHO "node: \033[31m$1@$HostName\033[0m is already down, skip it"
+	fi
+}
+
+#start backup control nodes and control nodes if configured, see "emobile.cfg" in ./ebin directory
+start_ctl_nodes ()
+{
+	if [ ! -f emobile.cfg -o ! -f emctl.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running start_ctl_nodes function\033[0m"
+		return 1
+	fi
+
+	HostName=`hostname`
+	E_PROCESS_NUM=409600
+	E_PORT_NUM=2048
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_back_nodes(\"$HostName\")" -s init stop`
+	for node in $Nodes
+	do
+		$ECHO "starting backup control node \033[34m$node""@""$HostName\033[0m ..."
+		start_node $E_PROCESS_NUM $node emctl $E_PORT_NUM
+	done
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_nodes(\"$HostName\")" -s init stop`
+	for node in $Nodes
+	do
+		$ECHO "starting control node \033[34m$node""@""$HostName\033[0m ..."
+		start_node $E_PROCESS_NUM $node emctl $E_PORT_NUM
+	done
+
+	unset E_PROCESS_NUM
+	unset E_PORT_NUM
+	unset Nodes
+	unset HostName
+}
+
+
+#stop backup control nodes and control nodes if configured, see "emobile.cfg" in ./ebin directory
+stop_ctl_nodes ()
+{
+	if [ ! -f emobile.cfg -o ! -f emctl.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running stop_ctl_nodes function\033[0m"
+		return 1
+	fi
+
+	HostName=`hostname`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_nodes(\"$HostName\")" -s init stop`
+	for node in $Nodes
+	do
+		$ECHO "stopping control node \033[31m$node""@""$HostName\033[0m ..."
+		stop_node $node
+	done
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_back_nodes(\"$HostName\")" -s init stop`
+	for node in $Nodes
+	do
+		$ECHO "stopping backup control node \033[31m$node""@""$HostName\033[0m ..."
+		stop_node $node
+	done
+
+	unset Nodes
+	unset HostName
+}
+
+
+#restart backup control nodes and control nodes if configured, see "emobile.cfg" in ./ebin directory
+restart_ctl_nodes ()
+{
+	if [ ! -f emobile.cfg -o ! -f emctl.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running restart_ctl_nodes function\033[0m"
+		return 1
+	fi
+
+	HostName=`hostname`
+	E_PROCESS_NUM=409600
+	E_PORT_NUM=2048
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_nodes(\"$HostName\")" -s init stop`
+	for node in $Nodes
+	do
+		$ECHO "stopping control node \033[31m$node""@""$HostName\033[0m ..."
+		stop_node $node
+	done
+
+	for node in $Nodes
+	do
+		$ECHO "starting control node \033[34m$node""@""$HostName\033[0m ..."
+		start_node $E_PROCESS_NUM $node emctl $E_PORT_NUM
+	done
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_back_nodes(\"$HostName\")" -s init stop`
+	for node in $Nodes
+	do
+		$ECHO "stopping backup control node \033[31m$node""@""$HostName\033[0m ..."
+		stop_node $node
+	done
+
+	for node in $Nodes
+	do
+		$ECHO "starting backup control node \033[34m$node""@""$HostName\033[0m ..."
+		start_node $E_PROCESS_NUM $node emctl $E_PORT_NUM
+	done
+
+	unset Nodes
+	unset HostName
+	unset E_PROCESS_NUM
+	unset E_PORT_NUM
+}
+
+#restart single ctl node if configured, see "emobile.cfg" in ./ebin directory
+restart_ctl_node ()
+{
+	if [ ! -f emobile.cfg -o ! -f emctl.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running restart_ctl_node function\033[0m"
+		return 1
+	fi
+
+	if [ $# -lt 1 ]; then
+		$ECHO "\033[31minvalid param, the first param must be node name\033[0m"
+		return 1
+	fi 
+
+	HostName=`hostname`
+	E_PROCESS_NUM=409600
+	E_PORT_NUM=2048
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_nodes(\"$HostName\")" -s init stop`
+	for node in $Nodes
+	do
+		if [ "$1" = "$node" ]; then
+			find_node="true"
+		fi
+	done
+
+	if [ -z $find_node ]; then
+		$ECHO "\033[31m$1 is not a configured ctl node, please check \"emobile.cfg\"\033[0m"
+		return 1
+	fi
+
+	$ECHO "stopping control node \033[31m$1""@""$HostName\033[0m ..."
+	stop_node $1
+	sleep 2
+	$ECHO "starting control node \033[34m$1""@""$HostName\033[0m ..."
+	start_node $E_PROCESS_NUM $1 emctl $E_PORT_NUM
+
+	unset HostName
+	unset Nodes
+	unset find_node
+	unset E_PROCESS_NUM
+	unset E_PORT_NUM
+}
+
+#restart single backup ctl node if configured, see "emobile.cfg" in ./ebin directory
+restart_backup_ctl_node ()
+{
+	if [ ! -f emobile.cfg -o ! -f emctl.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running restart_backup_ctl_node function\033[0m"
+		return 1
+	fi
+
+	if [ $# -lt 1 ]; then
+		$ECHO "\033[31minvalid param, the first param must be node name\033[0m"
+		return 1
+	fi 
+
+	HostName=`hostname`
+	E_PROCESS_NUM=409600
+	E_PORT_NUM=2048
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_back_nodes(\"$HostName\")" -s init stop`
+	for node in $Nodes
+	do
+		if [ "$1" = "$node" ]; then
+			find_node="true"
+		fi
+	done
+
+	if [ -z $find_node ]; then
+		$ECHO "\033[31m$1 is not a configured backup ctl node, please check \"emobile.cfg\"\033[0m"
+		return 1
+	fi
+
+	$ECHO "stopping backup control node \033[31m$1""@""$HostName\033[0m ..."
+	stop_node $1
+	sleep 2
+	$ECHO "starting backup control node \033[34m$1""@""$HostName\033[0m ..."
+	start_node $E_PROCESS_NUM $1 emctl $E_PORT_NUM
+
+	unset HostName
+	unset Nodes
+	unset find_node
+	unset E_PROCESS_NUM
+	unset E_PORT_NUM
+}
+
+
+#start conn nodes if configured, see "emobile.cfg" in ./ebin directory
+start_conn_nodes ()
+{
+	if [ ! -f emobile.cfg -o ! -f emconn.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running start_conn_nodes function\033[0m"
+		return 1
+	fi
+
+	HostName=`hostname`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_conn_nodes(\"$HostName\")" -s init stop`
+
+	for node in $Nodes
+	do
+		$ECHO "starting mobile connection node \033[34m$node""@""$HostName\033[0m ..."
+		start_node 204800 $node emconn 102400
+	done
+
+	unset Nodes
+	unset HostName
+}
+
+#stop conn nodes if configured, see "emobile.cfg" in ./ebin directory
+stop_conn_nodes ()
+{
+	if [ ! -f emobile.cfg -o ! -f emconn.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running stop_conn_nodes function\033[0m"
+		return 1
+	fi
+
+	HostName=`hostname`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_conn_nodes(\"$HostName\")" -s init stop`
+
+	for node in $Nodes
+	do
+		$ECHO "stopping mobile connection node \033[31m$node""@""$HostName\033[0m ..."
+		stop_node $node
+	done
+
+	unset Nodes
+	unset HostName
+}
+
+#restart conn nodes if configured, see "emobile.cfg" in ./ebin directory
+restart_conn_nodes ()
+{
+	if [ ! -f emobile.cfg -o ! -f emconn.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running restart_conn_nodes function\033[0m"
+		return 1
+	fi
+
+	HostName=`hostname`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_conn_nodes(\"$HostName\")" -s init stop`
+
+	for node in $Nodes
+	do
+		$ECHO "stopping mobile connection node \033[31m$node""@""$HostName\033[0m ..."
+		stop_node $node
+	done
+
+	for node in $Nodes
+	do
+		$ECHO "starting mobile connection node \033[34m$node""@""$HostName\033[0m ..."
+		start_node 204800 $node emconn 102400
+	done
+
+	unset Nodes
+	unset HostName
+}
+
+#restart conn node if configured, see "emobile.cfg" in ./ebin directory
+restart_conn_node ()
+{
+	if [ ! -f emobile.cfg -o ! -f emconn.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running restart_conn_node function\033[0m"
+		return 1
+	fi
+
+	if [ $# -lt 1 ]; then
+		$ECHO "\033[31minvalid param, the first param must be node name\033[0m"
+		return 1
+	fi 
+
+	HostName=`hostname`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_conn_nodes(\"$HostName\")" -s init stop`
+	for node in $Nodes
+	do
+		if [ "$1" = "$node" ]; then
+			find_node="true"
+		fi
+	done
+
+	if [ -z $find_node ]; then
+		$ECHO "\033[31m$1 is not a configured connection node, please check \"emobile.cfg\"\033[0m"
+		return 1
+	fi
+
+	$ECHO "stopping mobile connection node \033[31m$1""@""$HostName\033[0m ..."
+	stop_node $1
+	sleep 2
+	$ECHO "starting mobile connection node \033[34m$1""@""$HostName\033[0m ..."
+	start_node 204800 $1 emconn 102400
+
+	unset HostName
+	unset Nodes
+	unset find_node
+}
+
+
+#start push nodes if configured, see "emobile.cfg" in ./ebin directory
+start_push_nodes ()
+{
+	if [ ! -f emobile.cfg -o ! -f empush.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running start_push_nodes function\033[0m"
+		return 1
+	fi
+
+	HostName=`hostname`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_push_nodes(\"$HostName\")" -s init stop`
+
+	for node in $Nodes
+	do
+		$ECHO "starting push node \033[34m$node""@""$HostName\033[0m ..."
+		start_node 10240 $node empush 2048
+	done 
+
+	unset Nodes
+	unset HostName
+}
+
+#stop push nodes if configured, see "emobile.cfg" in ./ebin directory
+stop_push_nodes ()
+{
+	if [ ! -f emobile.cfg -o ! -f empush.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running stop_push_nodes function\033[0m"
+		return 1
+	fi
+
+	HostName=`hostname`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_push_nodes(\"$HostName\")" -s init stop`
+
+	for node in $Nodes
+	do
+		$ECHO "stopping push node \033[31m$node""@""$HostName\033[0m ..."
+		stop_node $node
+	done 
+
+	unset Nodes
+	unset HostName
+}
+
+#restart push nodes if configured, see "emobile.cfg" in ./ebin directory
+restart_push_nodes ()
+{
+	if [ ! -f emobile.cfg -o ! -f empush.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running restart_push_nodes function\033[0m"
+		return 1
+	fi
+
+	HostName=`hostname`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_push_nodes(\"$HostName\")" -s init stop`
+
+	for node in $Nodes
+	do
+		$ECHO "stopping push node \033[31m$node""@""$HostName\033[0m ..."
+		stop_node $node
+	done 
+
+	for node in $Nodes
+	do
+		$ECHO "starting push node \033[34m$node""@""$HostName\033[0m ..."
+		start_node 10240 $node empush 2048
+	done 
+
+	unset Nodes
+	unset HostName
+}
+
+#restart single push node if configured, see "emobile.cfg" in ./ebin directory
+restart_push_node ()
+{
+	if [ ! -f emobile.cfg -o ! -f empush.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running restart_push_node function\033[0m"
+		return 1
+	fi
+
+	if [ $# -lt 1 ]; then
+		$ECHO "\033[31minvalid param, the first param must be node name\033[0m"
+		return 1
+	fi 
+
+	HostName=`hostname`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_push_nodes(\"$HostName\")" -s init stop`
+	for node in $Nodes
+	do
+		if [ "$1" = "$node" ]; then
+			find_node="true"
+		fi
+	done
+
+	if [ -z $find_node ]; then
+		$ECHO "\033[31m$1 is not a configured push node, please check \"emobile.cfg\"\033[0m"
+		return 1
+	fi
+
+	$ECHO "stopping push node \033[31m$1""@""$HostName\033[0m ..."
+	stop_node $1
+	sleep 2
+	$ECHO "starting push node \033[34m$1""@""$HostName\033[0m ..."
+	start_node 10240 $1 empush 2048
+
+	unset HostName
+	unset Nodes
+	unset find_node
+}
+
+
+

@@ -1,0 +1,6 @@
+#Wed Jan 05 15:04:32 CST 2011
+eclipse.preferences.version=1
+encoding//src/common/socket_server.erl=UTF-8
+encoding//src/conn_node/service_mobile_conn.erl=UTF-8
+encoding//src/ctl_node/service_lookup_mobile_node.erl=UTF-8
+encoding//src/push_node/service_push_msg.erl=UTF-8

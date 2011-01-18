@@ -1,0 +1,58 @@
+#!/bin/sh
+#########################################################################################################
+
+#check ebin directory
+if [ ! -d ebin ]; then
+	echo "ERROR: beam directory is not!"
+	exit 1
+fi
+
+#get server host name
+HostName=`hostname`
+ECHO="echo -e"
+
+#import functions
+. ./functions
+
+#cd beam directory
+cd ebin
+
+if [ $# -gt 0 ]; then
+	restart_type="$1"
+else
+	restart_type="all"
+fi
+
+if [ $restart_type = "all" -o $restart_type = "push" ]; then 
+	restart_push_nodes
+fi
+
+if [ $restart_type = "all" -o $restart_type = "conn" ]; then 
+	restart_conn_nodes
+fi
+
+if [ $restart_type = "all" -o $restart_type = "ctl" ]; then
+	restart_ctl_nodes
+fi
+
+if [ $restart_type = "ctlnode" ]; then
+	restart_ctl_node $2
+fi
+
+if [ $restart_type = "backctlnode" ]; then
+	restart_backup_ctl_node $2
+fi
+
+if [ $restart_type = "connnode" ]; then
+	restart_conn_node $2
+fi
+
+if [ $restart_type = "pushnode" ]; then
+	restart_push_node $2
+fi
+
+
+unset HostName
+unset restart_type
+
+

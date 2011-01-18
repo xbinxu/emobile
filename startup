@@ -1,0 +1,25 @@
+#!/bin/sh
+#########################################################################################################
+
+#check ebin directory
+if [ ! -d ebin ]; then
+	echo "ERROR: beam directory is not!"
+	exit 1
+fi
+
+#import functions
+. ./functions
+
+#cd beam directory
+cd ebin
+
+ECHO="echo -e"
+
+# start control and backup control nodes, see "./functions"
+start_ctl_nodes
+
+#start mobile connection nodes, see "./functions"
+start_conn_nodes
+
+#start server push nodes, see "./functions"
+start_push_nodes

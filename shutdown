@@ -1,0 +1,17 @@
+#!/bin/sh
+
+. ./functions
+
+#get server host name
+HostName=`hostname`
+ECHO="echo -e"
+
+cd ebin
+
+stop_push_nodes
+stop_conn_nodes
+stop_ctl_nodes
+   
+
+   
+

@@ -1,0 +1,8 @@
+Mnesia.*
+*.beam
+*.log
+*~
+*.bat
+erl_crash.dump
+_SYNCAPP
+*.swp
