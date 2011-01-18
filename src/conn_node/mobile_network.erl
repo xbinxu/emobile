@@ -182,9 +182,9 @@ on_msg_deliver(MsgSize, MsgBody) ->
 				0 -> ok;
 				_ ->
 					TargetListBin = binary:part(MsgBody, 16, TargetNum * 4),
-					TargetList = decode_target_list(TargetListBin, TargetNum, []),
+					TargetList = emobile_message:decode_target_list(TargetListBin, TargetNum, []),
 					
-					TimeStampBin = make_timestamp_binary(),
+					TimeStampBin = emobile_message:make_timestamp_binary(),
 					MsgContentBin = binary:part(MsgBody, 16 + TargetNum * 4, byte_size(MsgBody) - (16 + TargetNum * 4)),
 
 					?INFO_MSG("receive message deliver ~p -> ~p: ~p ~n", [MobileId, TargetList, MsgContentBin]),
@@ -199,23 +199,6 @@ on_msg_deliver(MsgSize, MsgBody) ->
 					ok
 			end
 	end.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-make_timestamp_binary() ->
-	{{Year, Month, Day}, {Hour, Min, Sec}} = calendar:local_time(),
-	<<Year: 2/?NET_ENDIAN-unit:8, 
-	  Month: 1/?NET_ENDIAN-unit:8, 
-	  Day: 1/?NET_ENDIAN-unit:8, 
-	  0: 1/?NET_ENDIAN-unit:8,
-	  Hour: 1/?NET_ENDIAN-unit:8, 
-	  Min: 1/?NET_ENDIAN-unit:8, 
-	  Sec: 1/?NET_ENDIAN-unit:8>>.	
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-decode_target_list(_, 0, L) ->
-	L;
-decode_target_list(<<TargetId:4/?NET_ENDIAN-unit:8, Bin/binary>>, TargetNum, L) ->
-	decode_target_list(Bin, TargetNum - 1, [TargetId | L]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 send_by_backup(CtlNode, MobileId, MsgBin) ->

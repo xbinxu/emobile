@@ -22,6 +22,25 @@
 
 test() ->
 	loglevel:set(5),
+	login("192.168.9.149", 9021, 11001),
+	login("192.168.9.149", 9022, 11002),	
+	login("192.168.9.149", 9023, 11003),
+	login("192.168.9.149", 9021, 211001),
+	login("192.168.9.149", 9022, 211002),	
+	login("192.168.9.149", 9023, 211003),
+	login("192.168.9.149", 9021, 2000001),
+	login("192.168.9.149", 9510, 0),
+	
+	timer:sleep(999),
+	
+	send_message(11001, 211001, "fuck1"),
+	send_message(11002, 211002, "fuck2"),
+	send_message(11003, 211003, "fuck3"),	
+	send_message(11001, 211003, "fuck4"),
+	send_message(11002, 211002, "fuck5"),
+	send_message(11003, 211001, "fuck6"),		
+	send_message(11003, 2000001, "send message through backup ctl node"),
+	broadcast_msg(0, "fuck you all"),
 	ok.
 
 load_test(Low, High) ->
@@ -191,7 +210,7 @@ on_receive_msg(MobileId, _MsgSize, MsgType, MsgBody) ->
 
 on_msg_deliver(_Client, MsgBody) ->
 	<<SrcMobileId: 4/?NET_ENDIAN-unit:8, TimeStamp:8/binary, TargetNum: 4/?NET_ENDIAN-unit:8>> = binary:part(MsgBody, 0, 16),
-	TargetList = decode_target_list(binary:part(MsgBody, 16, TargetNum * 4), TargetNum, []),
+	TargetList = emobile_message:decode_target_list(binary:part(MsgBody, 16, TargetNum * 4), TargetNum, []),
 	MsgContent = binary:part(MsgBody, 16 + TargetNum*4, byte_size(MsgBody) - (16 + TargetNum * 4)), %% ignore client timestamp
 	<<Year: 2/?NET_ENDIAN-unit:8, 
 	  Month: 1/?NET_ENDIAN-unit:8, 
@@ -204,8 +223,3 @@ on_msg_deliver(_Client, MsgBody) ->
               [SrcMobileId, TargetList, Year, Month, Day, Hour, Min, Sec, MsgContent]),
 	ok.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-decode_target_list(_, 0, L) ->
-	L;
-decode_target_list(<<TargetId:4/?NET_ENDIAN-unit:8, Bin/binary>>, TargetNum, L) ->
-	decode_target_list(Bin, TargetNum - 1, [TargetId | L]).

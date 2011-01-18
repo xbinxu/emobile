@@ -34,11 +34,6 @@ start_conn_nodes $ConnNode_ProcessNum $ConnNode_PortNum
 #start server push nodes, see "./functions"
 start_push_nodes $PushNode_ProcessNum $PushNode_PortNum
 
-
-
-
-
-
 unset HostName
 unset ECHO
 unset CtlNode_ProcessNum
