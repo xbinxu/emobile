@@ -1,5 +1,7 @@
 #!/bin/sh
 
+#start emobile nodes
+#example start_node 102400 emctl_1_200000 emctl 2048
 start_node () 
 {
 	if [ ! -f emobile.cfg -o ! -f $3.app ]; then
