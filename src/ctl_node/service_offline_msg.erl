@@ -69,9 +69,9 @@ save_undelivered_msg(TargetMobileId, MsgBin) ->
 %%          {error, Reason} -> failed
 %% --------------------------------------------------------------------
 send_offline_msgs(MobileId, ConnNode) ->
-	case mnesia:dirty_index_read(undelivered_msgs, MobileId, #undelivered_msgs.mobile_id) of
-		[] -> ok;
-		List ->
+	case mnesia:transaction(fun() -> mnesia:index_read(undelivered_msgs, MobileId, #undelivered_msgs.mobile_id) end) of
+		{atomic, []} -> ok;
+		{atomic, List} ->
 			F = fun(#undelivered_msgs{id = Id, mobile_id = TargetMobileId, msg_bin = MsgBin}) ->
 						case rpc:call(ConnNode, service_mobile_conn, send_message, [node(), TargetMobileId, MsgBin]) of
 							ok -> 
@@ -83,7 +83,11 @@ send_offline_msgs(MobileId, ConnNode) ->
 								service_lookup_mobile_node:on_conn_node_down(ConnNode)
 						end
 				end,
-			lists:foreach(F, lists:reverse(List))
+			lists:foreach(F, lists:reverse(List)),
+			ok;
+		{aborted, Reason} ->
+			?ERROR_MSG("Read mobile[~p] offline message failed: ~p ~n", [MobileId, Reason]),
+			{error, Reason}
 	end.
 
 

@@ -92,7 +92,7 @@ broadcast_online(ServerId, TimeStampBin, MsgBin) ->
 													   1: 4/?NET_ENDIAN-unit:8,
 													   MobileId: 4/?NET_ENDIAN-unit:8,
 													   MsgBin/binary>>),
-						erlang:yield()
+						timer:sleep(9)
 				end,
 			lists:foreach(F, L),
 			ok
