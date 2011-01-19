@@ -32,6 +32,7 @@ fi
 
 if [ $restart_type = "all" -o $restart_type = "push" ]; then 
 	restart_push_nodes $PushNode_ProcessNum $PushNode_PortNum
+fi	
 
 if [ $restart_type = "all" -o $restart_type = "conn" ]; then 
 	restart_conn_nodes $ConnNode_ProcessNum $ConnNode_PortNum
@@ -65,6 +66,3 @@ unset CtlNode_ProcessNum
 unset CtlNode_PortNum
 unset ConnNode_ProcessNum
 unset ConnNode_PortNum
-unset PushNode_ProcessNum
-unset PushNode_PortNum
-
