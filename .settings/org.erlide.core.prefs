@@ -1,8 +1,8 @@
-#Mon Jan 03 12:35:34 CST 2011
+#Wed Jan 19 10:33:05 CST 2011
 backend_version=R14B
 eclipse.preferences.version=1
 external_includes=
 external_modules=
 include_dirs=include;
 output_dir=ebin
-source_dirs=src/push_node;src/ctl_node;src/conn_node;src/common;src;
+source_dirs=mysql/src;src/push_node;src/ctl_node;src/conn_node;src/common;src;

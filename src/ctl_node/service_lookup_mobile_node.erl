@@ -26,7 +26,8 @@
 		 on_mobile_logout/3,
 		 on_conn_node_down/1,
 		 lookup_conn_node/1,
-		 lookup_conn_node_backup/1
+		 lookup_conn_node_backup/1,
+		 broadcast_all/3
 		 ]).
 
 %%
@@ -97,6 +98,27 @@ lookup_conn_node_backup(MobileId) ->
 			undefined
 	end.
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% broadcast all
+broadcast_all(From, TimeStampBin, MsgBin) ->
+	{_, _, _, _, SQL} = emobile_config:get_option(account_db),
+	ConnNodes = emobile_config:get_option(emctl_nodes),
+	case lists:keyfind(node(), 3, ConnNodes) of
+		{StartUID, EndUID, _} ->
+			ReadSQL = lists:flatten(io_lib:format(SQL, [StartUID, EndUID])),
+			case mysql:fetch(account_db, list_to_binary(ReadSQL)) of
+				{data, {mysql_result, _, DataList, _, _}} ->
+					UID_L = lists:map(fun(DataRow) -> lists:nth(1, DataRow) end, DataList),
+					broadcast_uid_list(From, UID_L, TimeStampBin, MsgBin);
+				Error ->
+					?ERROR_MSG("fetch uid list from mysql db failed: ~p ~n", [Error]),
+					{error, "fetch uid list failed"}
+			end;
+		false ->
+			?ERROR_MSG("Can't get uid scope from emobile.cfg, please check it! ~n", []),
+			{error, "check emobile.cfg"}
+	end.			
+						
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 init([]) ->
 	process_flag(trap_exit, true), 
@@ -300,4 +322,36 @@ notify_push_node_startup() ->
 				end
 		end,
 	lists:foreach(F, PushNodes).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+broadcast_uid_list(From, Uid_L, TimeStampBin, MsgBin) ->
+	F = fun(MobileId) ->
+				MsgSize = 2+2+4+8+4+4+byte_size(MsgBin),
+				MsgBin = <<MsgSize:2/?NET_ENDIAN-unit:8,
+							?MSG_DELIVER:2/?NET_ENDIAN-unit:8,
+							From:4/?NET_ENDIAN-unit:8,
+							TimeStampBin/binary, 												  
+							1: 4/?NET_ENDIAN-unit:8,
+							MobileId: 4/?NET_ENDIAN-unit:8,
+							MsgBin/binary>>,
+
+				case mnesia:dirty_read(mobile_node, MobileId) of
+					[#mobile_node{mobile_id=MobileId, conn_node=ConnNode, pid=_Pid}] ->
+						case rpc:call(ConnNode, service_mobile_conn, send_message, [node(), MobileId, MsgBin]) of
+							ok -> ok;
+							{badrpc, Reason} ->
+								?ERROR_MSG("RPC send message failed:~p for mobile: ~p, save undelivered message.~n", [Reason, MobileId]),
+								service_offline_msg:save_undelivered_msg(MobileId, MsgBin);
+							{error, Reason} ->
+								?ERROR_MSG("RPC send message failed:~p for mobile: ~p, save undelivered message.~n", [Reason, MobileId]),
+								service_offline_msg:save_undelivered_msg(MobileId, MsgBin)
+						end;
+					[] ->
+						service_offline_msg:save_undelivered_msg(MobileId, MsgBin);
+					{aborted, Reason} ->
+						?CRITICAL_MSG("read mobile_node failed: ~p ~n", [Reason]),
+						service_offline_msg:save_undelivered_msg(MobileId, MsgBin)
+				end
+		end,
+	lists:foreach(F, Uid_L).
 	
