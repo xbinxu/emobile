@@ -13,7 +13,7 @@
 %%
 %% Exported Functions
 %%
--export([test/0, load_test/2, login/3, send_message/3, ping/1, broadcast_msg/2]).
+-export([test/0, load_test/2, login/3, send_message/3, ping/1, broadcast_msg/2, broadcast_all/2]).
 
 %%
 %% API Functions
@@ -91,6 +91,25 @@ broadcast_msg(From, Message) ->
 	SendBin = <<MsgLeng: 2/?NET_ENDIAN-unit:8,
 				?MSG_BROADCAST: 2/?NET_ENDIAN-unit:8,
 				?BROADCAST_ONLINE: 2/?NET_ENDIAN-unit:8,
+				From: 4/ ?NET_ENDIAN-unit:8,
+				0: 8/?NET_ENDIAN-unit:8,				
+				MsgBin/binary>>,
+	
+	case get(From) of
+		undefined ->
+			{error, "not login"};
+		Pid ->
+			Pid ! {tcp_send, SendBin},
+			ok
+	end.
+
+broadcast_all(From, Message) ->
+	MsgBin = list_to_binary(Message),
+	MsgLeng = 18 + byte_size(MsgBin),
+	
+	SendBin = <<MsgLeng: 2/?NET_ENDIAN-unit:8,
+				?MSG_BROADCAST: 2/?NET_ENDIAN-unit:8,
+				?BROADCAST_ALL: 2/?NET_ENDIAN-unit:8,
 				From: 4/ ?NET_ENDIAN-unit:8,
 				0: 8/?NET_ENDIAN-unit:8,				
 				MsgBin/binary>>,

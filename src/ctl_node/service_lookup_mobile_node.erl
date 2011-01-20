@@ -101,10 +101,11 @@ lookup_conn_node_backup(MobileId) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% broadcast all
 broadcast_all(From, TimeStampBin, MsgBin) ->
-	{_, _, _, _, SQL} = emobile_config:get_option(account_db),
-	ConnNodes = emobile_config:get_option(emctl_nodes),
-	case lists:keyfind(node(), 3, ConnNodes) of
-		{StartUID, EndUID, _} ->
+	{_, _, _, _, _, SQL} = emobile_config:get_option(account_db),
+	CtlNodes = emobile_config:get_option(emctl_nodes),
+	Node = node(),
+	case lists:keyfind(Node, 3, CtlNodes) of
+		{StartUID, EndUID, Node} ->
 			ReadSQL = lists:flatten(io_lib:format(SQL, [StartUID, EndUID])),
 			broadcast_all_impl(From, TimeStampBin, MsgBin, ReadSQL, 0);
 		false ->
@@ -338,7 +339,7 @@ broadcast_uid_list(From, Uid_L, TimeStampBin, MsgBin) ->
 	TimeStamp = emobile_message:decode_timestamp(TimeStampBin),
 	F = fun(MobileId) ->
 				MsgSize = 2+2+4+8+4+4+byte_size(MsgBin),
-				MsgBin = <<MsgSize:2/?NET_ENDIAN-unit:8,
+				SendBin = <<MsgSize:2/?NET_ENDIAN-unit:8,
 							?MSG_DELIVER:2/?NET_ENDIAN-unit:8,
 							From:4/?NET_ENDIAN-unit:8,
 							TimeStampBin/binary, 												  
@@ -348,20 +349,25 @@ broadcast_uid_list(From, Uid_L, TimeStampBin, MsgBin) ->
 
 				case mnesia:dirty_read(mobile_node, MobileId) of
 					[#mobile_node{mobile_id=MobileId, conn_node=ConnNode, pid=Pid}] ->
-						case rpc:call(ConnNode, service_mobile_conn, send_message, [node(), Pid, TimeStamp, MsgBin]) of
+						case rpc:call(ConnNode, service_mobile_conn, send_message, [node(), Pid, TimeStamp, SendBin]) of
 							ok -> ok;
 							{badrpc, Reason} ->
 								?ERROR_MSG("RPC send message failed:~p for mobile: ~p, save undelivered message.~n", [Reason, MobileId]),
-								service_offline_msg:save_undelivered_msg(MobileId, TimeStamp, MsgBin);
+								service_offline_msg:save_undelivered_msg(MobileId, TimeStamp, SendBin);
 							{error, Reason} ->
 								?ERROR_MSG("RPC send message failed:~p for mobile: ~p, save undelivered message.~n", [Reason, MobileId]),
-								service_offline_msg:save_undelivered_msg(MobileId, TimeStamp, MsgBin)
+								service_offline_msg:save_undelivered_msg(MobileId, TimeStamp, SendBin)
 						end;
+
 					[] ->
-						service_offline_msg:save_undelivered_msg(MobileId, TimeStamp, MsgBin);
+						service_offline_msg:save_undelivered_msg(MobileId, TimeStamp, SendBin);
+
 					{aborted, Reason} ->
 						?CRITICAL_MSG("read mobile_node for mobile[~p] failed: ~p ~n", [MobileId, Reason]),
-						service_offline_msg:save_undelivered_msg(MobileId, TimeStamp, MsgBin)
+						service_offline_msg:save_undelivered_msg(MobileId, TimeStamp, SendBin);
+
+					Result ->
+						?ERROR_MSG("dirty_read result: ~p ~n", [Result])
 				end,
 				timer:sleep(5)
 		end,
