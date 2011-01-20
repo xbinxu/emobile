@@ -17,7 +17,7 @@
 
 %% --------------------------------------------------------------------
 %% External exports
--export([start_link/0, broadcast_online/3]).
+-export([start_link/0, broadcast_online/3, broadcast_all/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -44,7 +44,7 @@ start_link() ->
 	end.
 
 %% --------------------------------------------------------------------
-%% Function: start_link/0
+%% Function: broadcast_online
 %% Description: start message push tcp interface server(called from supervisor)
 %% Returns: {ok, Pid} -> ok
 %%          _         -> error
@@ -52,6 +52,19 @@ start_link() ->
 broadcast_online(ServerId, TimeStampBin, Txt) ->
 	spawn(fun() -> gen_server:call(?MODULE, 
 								   {broadcast_online, ServerId, TimeStampBin, Txt}, 
+								   infinity) 
+		  end),
+	ok.
+
+%% --------------------------------------------------------------------
+%% Function: broadcast_all
+%% Description: start message push tcp interface server(called from supervisor)
+%% Returns: {ok, Pid} -> ok
+%%          _         -> error
+%% --------------------------------------------------------------------
+broadcast_all(ServerId, TimeStampBin, Txt) ->
+	spawn(fun() -> gen_server:call(?MODULE, 
+								   {broadcast_all, ServerId, TimeStampBin, Txt}, 
 								   infinity) 
 		  end),
 	ok.
@@ -83,7 +96,7 @@ init([]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_call({broadcast_online, ServerId, TimeStampBin, Txt}, _From, State) ->
+handle_call({broadcast_online, ServerId, TimeStampBin, MsgBin}, _From, State) ->
 	ConnNodes1 = emobile_config:get_option(emconn_nodes),
 	ConnNodes = lists:map(fun({_, ConnNode}) -> ConnNode end, ConnNodes1),
 	
@@ -91,8 +104,27 @@ handle_call({broadcast_online, ServerId, TimeStampBin, Txt}, _From, State) ->
 	rpc:multicall(ConnNodes, 
 				  service_mobile_conn, 
 				  broadcast_online, 
-				  [ServerId, TimeStampBin, Txt], 
+				  [ServerId, TimeStampBin, MsgBin], 
 				  infinity),	
+	{reply, ok, State};
+
+handle_call({broadcast_all, ServerId, TimeStampBin, MsgBin}, _From, State) ->
+	CtlNodes1 = emobile_config:get_option(emctl_nodes),
+	CtlNodes = lists:map(fun({_, _, CtlNode}) -> CtlNode end, CtlNodes1),
+	
+	%% wait until all nodes broadcast finished
+	case rpc:multicall(CtlNodes, 
+				  service_lookup_mobile_node, 
+				  broadcast_all, 
+				  [ServerId, TimeStampBin, MsgBin], 
+				  infinity) of
+		{_ResL, []} -> ok;
+		{_ResL, BadNodes} ->
+			erlang:start_timer(59999, self(), {broadcast_all, ServerId, TimeStampBin, MsgBin, BadNodes})
+	end,
+	{reply, ok, State};
+
+handle_call(_Request, _From, State) ->
 	{reply, ok, State}.
 
 %% --------------------------------------------------------------------
@@ -112,6 +144,18 @@ handle_cast(_Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
+handle_info({timeout, _, {broadcast_all, ServerId, TimeStampBin, MsgBin, Nodes}}, State) ->
+	case rpc:multicall(Nodes, 
+				  service_lookup_mobile_node, 
+				  broadcast_all, 
+				  [ServerId, TimeStampBin, MsgBin], 
+				  infinity) of
+		{_ResL, []} -> ok;
+		{_ResL, BadNodes} ->
+			erlang:start_timer(59999, self(), {broadcast_all, ServerId, TimeStampBin, MsgBin, BadNodes})
+	end,	
+	{noreply, State};
+
 handle_info(_Info, State) ->
     {noreply, State}.
 

@@ -16,7 +16,7 @@
 
 %% --------------------------------------------------------------------
 %% External exports
--export([start_link/0, save_undelivered_msg/2, send_offline_msgs/2]).
+-export([start_link/0, save_undelivered_msg/3, send_offline_msgs/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -24,7 +24,7 @@
 -record(state, {}).
 
 -record(unique_ids, {type, id}).
--record(undelivered_msgs, {id = 0, mobile_id = 0, msg_bin = <<>>}).
+-record(undelivered_msgs, {id = 0, mobile_id = 0, timestamp, msg_bin = <<>>}).
 
 %% ====================================================================
 %% External functions
@@ -51,9 +51,9 @@ start_link() ->
 %% Returns: ok  -> success
 %%          {error, Reason} -> failed
 %% --------------------------------------------------------------------
-save_undelivered_msg(TargetMobileId, MsgBin) ->
+save_undelivered_msg(TargetMobileId, TimeStamp, MsgBin) ->
 	Id = mnesia:dirty_update_counter(unique_ids, undelivered_msg, 1),
-	Record = #undelivered_msgs{id = Id, mobile_id = TargetMobileId, msg_bin = MsgBin},
+	Record = #undelivered_msgs{id = Id, mobile_id = TargetMobileId, timestamp=TimeStamp, msg_bin = MsgBin},
     case mnesia:transaction(fun() -> mnesia:write(Record) end) of
 		{atomic, ok} ->
 			ok;
@@ -72,8 +72,8 @@ send_offline_msgs(MobileId, ConnNode) ->
 	case mnesia:transaction(fun() -> mnesia:index_read(undelivered_msgs, MobileId, #undelivered_msgs.mobile_id) end) of
 		{atomic, []} -> ok;
 		{atomic, List} ->
-			F = fun(#undelivered_msgs{id = Id, mobile_id = TargetMobileId, msg_bin = MsgBin}) ->
-						case rpc:call(ConnNode, service_mobile_conn, send_message, [node(), TargetMobileId, MsgBin]) of
+			F = fun(#undelivered_msgs{id = Id, mobile_id = TargetMobileId, timestamp=TimeStamp, msg_bin = MsgBin}) ->
+						case rpc:call(ConnNode, service_mobile_conn, send_message, [node(), TargetMobileId, TimeStamp, MsgBin]) of
 							ok -> 
 								mnesia:dirty_delete(undelivered_msgs, Id);
 							{error, Reason} ->
@@ -83,7 +83,7 @@ send_offline_msgs(MobileId, ConnNode) ->
 								service_lookup_mobile_node:on_conn_node_down(ConnNode)
 						end
 				end,
-			lists:foreach(F, lists:reverse(List)),
+			lists:foreach(F, lists:keysort(4, List)), %% sorted by timestamp
 			ok;
 		{aborted, Reason} ->
 			?ERROR_MSG("Read mobile[~p] offline message failed: ~p ~n", [MobileId, Reason]),
@@ -112,6 +112,8 @@ init([]) ->
 	mnesia:create_table(unique_ids, 
 						[{disc_copies, [node()]},
 						 {attributes, record_info(fields, unique_ids)}]),
+	
+	erlang:start_timer(59999*60, self(), delete_expired_offline_msg),
 	
     {ok, #state{}}.
 
@@ -146,6 +148,29 @@ handle_cast(_Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
+handle_info({timeout, _TimerRef, delete_expired_offline_msg}, State) ->
+	erlang:start_timer(59999*60, self(), delete_expired_offline_msg),
+	{DateNow, {HH, _, _}} = calendar:local_time(),
+	%% check delete expired offline message at early morning
+	case lists:member(HH, [4, 5, 6]) of
+		true ->
+			F = fun(#undelivered_msgs{id=Id, timestamp={DateSave, _}}, DList) ->
+						Days = calendar:date_to_gregorian_days(DateNow) - calendar:date_to_gregorian_days(DateSave),
+						case Days > 15 of 
+							true -> [Id | DList];
+							false -> DList
+						end
+				end,
+			case db_ext:dirty_foldl(F, [], undelivered_msgs) of
+				[] -> {noreply, State};
+				DelIdL ->
+					mnesia:transaction(fun() -> lists:foreach(fun(Id) -> mnesia:delete(undelivered_msgs, Id) end, DelIdL) end),
+					{noreply, State}
+			end;
+		false ->
+			{noreply, State}
+	end;
+
 handle_info(_Info, State) ->
     {noreply, State}.
 

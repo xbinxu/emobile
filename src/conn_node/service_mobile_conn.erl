@@ -20,7 +20,7 @@
 %%
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_link/0, send_message/3, kickout_mobile/3, on_ctlnode_startup/1, broadcast_online/3]).
+-export([start_link/0, send_message/4, kickout_mobile/3, on_ctlnode_startup/1, broadcast_online/3]).
 
 %%
 %% API Functions
@@ -29,7 +29,7 @@
 -record(server, {control_node}).
 
 -record(unique_ids, {type, id}).
--record(undelivered_msgs, {id = 0, mobile_id = 0, msg_bin = <<>>, control_node}).
+-record(undelivered_msgs, {id = 0, mobile_id = 0, timestamp, msg_bin = <<>>, control_node}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 start_link() ->
@@ -44,17 +44,25 @@ start_link() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% provide this method to be called by control node
 %% send message to connected mobile
-send_message(CtlNode, MobileId, MsgBin) when is_integer(MobileId) ->
+send_message(CtlNode, MobileId, TimeStamp, MsgBin) when is_integer(MobileId) ->
 	case ets:lookup(ets_mobile_id2pid, MobileId) of
 		[{MobileId, Pid, CtlNode}] ->
-			send_message(CtlNode, Pid, MsgBin);
+			send_message(CtlNode, Pid, TimeStamp, MsgBin);
 		_ ->
 			{error, "Can't find pid from ets_mobile_id2pid."}
 	end;
 
-send_message(CtlNode, Pid, MsgBin) when is_pid(Pid) ->
-	Pid ! {tcp_send, CtlNode, MsgBin},
-	ok.	
+send_message(CtlNode, Pid, TimeStamp, MsgBin) when is_pid(Pid) ->
+	Pid ! {tcp_send, self(), CtlNode, TimeStamp, MsgBin},
+	case self() of
+		Pid -> ok;
+		_ -> 
+			receive 
+				{tcp_send, ok} -> ok
+			after 4999 ->
+				{error, "time out"}
+			end
+	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% provide this method to be called by control node
@@ -80,19 +88,20 @@ on_ctlnode_startup(CtlNode) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% provide this mothod to be called by push node
 broadcast_online(ServerId, TimeStampBin, MsgBin) ->
+	TimeStamp = emobile_message:decode_timestamp(TimeStampBin),
 	case ets:tab2list(ets_mobile_id2pid) of
 		[] -> ok;
 		L ->
 			F = fun({MobileId, Pid, _}) ->
 						MsgSize = 24 + byte_size(MsgBin),
-						send_message(undefined, Pid, <<MsgSize:2/?NET_ENDIAN-unit:8,
-													   ?MSG_DELIVER:2/?NET_ENDIAN-unit:8,
-													   ServerId:4/?NET_ENDIAN-unit:8,
-													   TimeStampBin/binary, 												  
-													   1: 4/?NET_ENDIAN-unit:8,
-													   MobileId: 4/?NET_ENDIAN-unit:8,
-													   MsgBin/binary>>),
-						timer:sleep(9)
+						send_message(undefined, Pid, TimeStamp, <<MsgSize:2/?NET_ENDIAN-unit:8,
+													   			?MSG_DELIVER:2/?NET_ENDIAN-unit:8,
+													   			ServerId:4/?NET_ENDIAN-unit:8,
+													   			TimeStampBin/binary, 												  
+													   			1: 4/?NET_ENDIAN-unit:8,
+													   			MobileId: 4/?NET_ENDIAN-unit:8,
+													   			MsgBin/binary>>),
+						timer:sleep(5)
 				end,
 			lists:foreach(F, L),
 			ok
@@ -183,7 +192,9 @@ handle_cast({check_local_offline_msgs, CtlNode}, Server) ->
 		[] ->
 			void;
 		L ->
-			lists:foreach(fun(#undelivered_msgs{mobile_id=MobileId, msg_bin=MsgBin}) -> mobile_network:deliver_message([MobileId], MsgBin) end, L),
+			lists:foreach(fun(#undelivered_msgs{mobile_id=MobileId, timestamp=TimeStamp, msg_bin=MsgBin}) -> 
+								  mobile_network:deliver_message([MobileId], TimeStamp, MsgBin) 
+						  end, L),
 			lists:foreach(fun(#undelivered_msgs{id=Id}) -> mnesia:dirty_delete(undelivered_msgs, Id) end, L)
 	end,
 	{noreply, Server};
@@ -242,11 +253,12 @@ check_emobile_configuration() ->
 check_local_offline_msgs() ->
 	F = fun(#undelivered_msgs{id = Id, 
 							  mobile_id = MobileId,
+							  timestamp = TimeStamp,
 							  msg_bin = SendBin,
 							  control_node = CtlNode}, DeleteList) ->
 				case net_adm:ping(CtlNode) of
 					pong ->
-						mobile_network:deliver_message([MobileId], SendBin),
+						mobile_network:deliver_message([MobileId], TimeStamp, SendBin),
 						[Id | DeleteList];
 					pang ->
 						DeleteList

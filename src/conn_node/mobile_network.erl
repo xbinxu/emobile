@@ -13,24 +13,24 @@
 %%
 %% Exported Functions
 %%
--export([tcp_send/3, process_received_msg/2, deliver_message/2]).
+-export([tcp_send/4, process_received_msg/2, deliver_message/3]).
 
 %% -record(unique_ids, {type, id}).
--record(undelivered_msgs, {id = 0, mobile_id = 0, msg_bin = <<>>, control_node}).
+-record(undelivered_msgs, {id = 0, mobile_id = 0, timestamp, msg_bin = <<>>, control_node}).
 
 %%
 %% API Functions
 %%
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-tcp_send(CtlNode, Socket, SendBin) ->
+tcp_send(CtlNode, Socket, TimeStamp, SendBin) ->
 	case get(mobile_id) of 
 		undefined -> {error, "Mobile not login"};
 		MobileId -> 
 			case gen_tcp:send(Socket, SendBin) of
 				ok -> ok;
 				{error, Reason} ->
-					save_undelivered_message(CtlNode, MobileId, SendBin),
+					save_undelivered_message(MobileId, TimeStamp, SendBin, CtlNode),
 					{error, Reason}
 			end
 	end.		
@@ -61,24 +61,27 @@ process_received_msg(Socket, Bin) when is_binary(Bin) ->
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-deliver_message(TargetList, MsgBin) ->
+deliver_message(TargetList, TimeStamp, MsgBin) ->
 	F = fun(MobileId) ->
 				case ets:lookup(ets_mobile_id2pid, MobileId) of
 					[{MobileId, Pid, CtlNode}] -> 
-						service_mobile_conn:send_message(CtlNode, Pid, MsgBin);
+						case service_mobile_conn:send_message(CtlNode, Pid, TimeStamp, MsgBin) of
+							ok -> ok;
+							{error, _} -> save_undelivered_message(MobileId, TimeStamp, MsgBin, CtlNode)
+						end;
 					[] ->
 						case ctlnode_selector:get_ctl_node(MobileId) of
 							undefined ->
-								send_by_backup(undefined, MobileId, MsgBin);
+								send_by_backup(undefined, MobileId, TimeStamp, MsgBin);
 							CtlNode ->
 								case rpc:call(CtlNode, service_lookup_mobile_node, lookup_conn_node, [MobileId]) of
 									undefined ->
-										save_undelivered_message(MobileId, MsgBin, CtlNode);
+										save_undelivered_message(MobileId, TimeStamp, MsgBin, CtlNode);
 									{badrpc, Reason} ->
 										?ERROR_MSG("RPC control node failed:~p for mobile: ~p, trying route by backup node.~n", [Reason, MobileId]),
-										send_by_backup(CtlNode, MobileId, MsgBin);
-									{ConnNode, _Pid} ->
-										rpc_send_message(ConnNode, CtlNode, MobileId, MsgBin)
+										send_by_backup(CtlNode, MobileId, TimeStamp, MsgBin);
+									{ConnNode, Pid} ->
+										rpc_send_message(ConnNode, CtlNode, MobileId, Pid, TimeStamp, MsgBin)
 								end
 						end
 				end
@@ -185,70 +188,74 @@ on_msg_deliver(MsgSize, MsgBody) ->
 					TargetList = emobile_message:decode_target_list(TargetListBin, TargetNum, []),
 					
 					TimeStampBin = emobile_message:make_timestamp_binary(),
+					TimeStamp = emobile_message:decode_timestamp(TimeStampBin),
+
 					MsgContentBin = binary:part(MsgBody, 16 + TargetNum * 4, byte_size(MsgBody) - (16 + TargetNum * 4)),
 
 					?INFO_MSG("receive message deliver ~p -> ~p: ~p ~n", [MobileId, TargetList, MsgContentBin]),
 					
-					deliver_message(TargetList, <<MsgSize:2/?NET_ENDIAN-unit:8,
-												  ?MSG_DELIVER:2/?NET_ENDIAN-unit:8,
-												  MobileId:4/?NET_ENDIAN-unit:8,
-												  TimeStampBin/binary, 												  
-												  TargetNum: 4/?NET_ENDIAN-unit:8,
-												  TargetListBin/binary,
-												  MsgContentBin/binary>>),
+					deliver_message(TargetList, 
+                                    TimeStamp,
+                                    <<MsgSize:2/?NET_ENDIAN-unit:8,
+									  ?MSG_DELIVER:2/?NET_ENDIAN-unit:8,
+									  MobileId:4/?NET_ENDIAN-unit:8,
+									  TimeStampBin/binary, 												  
+									  TargetNum: 4/?NET_ENDIAN-unit:8,
+									  TargetListBin/binary,
+									  MsgContentBin/binary>>),
 					ok
 			end
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-send_by_backup(CtlNode, MobileId, MsgBin) ->
+send_by_backup(CtlNode, MobileId, TimeStamp, MsgBin) ->
 	BackCtlNode = ctlnode_selector:get_ctl_back_node(MobileId), %% this call should never failed(result =/= undefined)
 	case rpc:call(BackCtlNode, service_lookup_mobile_node, lookup_conn_node_backup, [MobileId]) of
 		undefined -> 
 			?ERROR_MSG("Lookup conn node failed and no control node config for mobile: ~p, message will be lost.~n", [MobileId]),
-			save_undelivered_message(MobileId, MsgBin, CtlNode);
+			save_undelivered_message(MobileId, TimeStamp, MsgBin, CtlNode);
 		{badrpc, Reason} ->
 			?ERROR_MSG("RPC backup control node failed:~p.~n", [Reason]),
-			save_undelivered_message(MobileId, MsgBin, CtlNode);										
-		{ConnNode, _Pid} -> 
-			rpc_send_message(ConnNode, undefined, MobileId, MsgBin)
+			save_undelivered_message(MobileId, TimeStamp, MsgBin, CtlNode);										
+		{ConnNode, Pid} -> 
+			rpc_send_message(ConnNode, undefined, MobileId, Pid, TimeStamp, MsgBin)
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-rpc_send_message(ConnNode, CtlNode, MobileId, MsgBin) ->
-	case rpc:call(ConnNode, service_mobile_conn, send_message, [CtlNode, MobileId, MsgBin]) of
+rpc_send_message(ConnNode, CtlNode, MobileId, Pid, TimeStamp, MsgBin) ->
+	case rpc:call(ConnNode, service_mobile_conn, send_message, [CtlNode, Pid, TimeStamp, MsgBin]) of
 		ok -> ok;
 		{badrpc, Reason} ->
 			?ERROR_MSG("RPC send message failed:~p for mobile: ~p, save undelivered message.~n", [Reason, MobileId]),
-			save_undelivered_message(MobileId, MsgBin, CtlNode);
+			save_undelivered_message(MobileId, TimeStamp, MsgBin, CtlNode);
 		{error, Reason} ->
 			?ERROR_MSG("RPC send message failed:~p for mobile: ~p, save undelivered message.~n", [Reason, MobileId]),
-			save_undelivered_message(MobileId, MsgBin, CtlNode)
+			save_undelivered_message(MobileId, TimeStamp, MsgBin, CtlNode)
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-save_undelivered_message(MobileId, MsgBin, CtlNode) ->
+save_undelivered_message(MobileId, TimeStamp, MsgBin, CtlNode) ->
 	case CtlNode of
 		undefined -> {error, "message lost"}; %% abandon message when control node is not configured
 		_ -> 
-			case rpc:call(CtlNode, service_offline_msg, save_undelivered_msg, [MobileId, MsgBin]) of
+			case rpc:call(CtlNode, service_offline_msg, save_undelivered_msg, [MobileId, TimeStamp, MsgBin]) of
 				ok -> ok;
 				{error, Reason} ->
 					?ERROR_MSG("Save undelivered message to control node[~p] failed:~p , save it to local. ~n", [CtlNode, Reason]),
-					save_local_undelivered_msg(MobileId, MsgBin, CtlNode);
+					save_local_undelivered_msg(MobileId, TimeStamp, MsgBin, CtlNode);
 				{badrpc, Reason} ->
 					?ERROR_MSG("Save undelivered message to control node[~p] failed:~p, save it to local. ~n", [CtlNode, Reason]),
-					save_local_undelivered_msg(MobileId, MsgBin, CtlNode)
+					save_local_undelivered_msg(MobileId, TimeStamp, MsgBin, CtlNode)
 			end
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-save_local_undelivered_msg(MobileId, MsgBin, CtlNode) ->
+save_local_undelivered_msg(MobileId, TimeStamp, MsgBin, CtlNode) ->
 	case CtlNode of
 		undefined -> {error, "message lost"};
 		_ ->
 			Id = mnesia:dirty_update_counter(unique_ids, undelivered_msg, 1),
-			Record = #undelivered_msgs{id = Id, mobile_id = MobileId, msg_bin = MsgBin, control_node = CtlNode},
+			Record = #undelivered_msgs{id=Id, mobile_id=MobileId, timestamp=TimeStamp, msg_bin=MsgBin, control_node=CtlNode},
 			case mnesia:transaction(fun() -> mnesia:write(Record) end) of
 				{atomic, ok} ->
 					ok;

@@ -47,7 +47,7 @@ load_test(Low, High) ->
 	loglevel:set(2),
 	?CRITICAL_MSG("starting load test....", []),
 	F = fun(MobileId) ->
-			Port = 9021 + (MobileId rem 8),
+			Port = 9021 + (MobileId rem 6),
 			login_load("192.168.9.149", Port, MobileId),
 			timer:sleep(5)
 		end,

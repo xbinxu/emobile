@@ -24,8 +24,7 @@ PushNode_PortNum=2048
 #cd beam directory
 cd ebin
 
-# start co
-ntrol and backup control nodes, see "./functions"
+# start control and backup control nodes, see "./functions"
 start_ctl_nodes $CtlNode_ProcessNum $CtlNode_PortNum
 
 #start mobile connection nodes, see "./functions"

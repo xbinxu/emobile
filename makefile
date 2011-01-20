@@ -12,6 +12,7 @@ compile: subdirs
 # sub-directories
 subdirs:
 	cd src && ROOT_DIR=$(ROOT_DIR) make
+	cd mysql && ROOT_DIR=$(ROOT_DIR) make
 
 
 # remove all the code

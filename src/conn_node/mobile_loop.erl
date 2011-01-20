@@ -39,8 +39,12 @@ loop([Socket, LastMsg]) ->
 			?ERROR_MSG("Mobile client is closed by reason: ~p. ~n", [Reason]),
 			erlang:garbage_collect(self());
 		
-		{tcp_send, CtlNode, SendBin} ->
-			case mobile_network:tcp_send(CtlNode, Socket, SendBin) of
+		{tcp_send, Pid, CtlNode, TimeStamp, SendBin} ->
+			case self() of
+				Pid -> void;
+				_ -> Pid ! {tcp_send, ok}
+			end,
+			case mobile_network:tcp_send(CtlNode, Socket, TimeStamp, SendBin) of
 				ok -> loop([Socket, LastMsg]);
 				{error, Reason} ->
 					?ERROR_MSG("Send tcp data to mobile client failed: ~p. ~n", [Reason]),
