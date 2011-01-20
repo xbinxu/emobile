@@ -258,7 +258,7 @@ on_msg_broadcast(MsgBody) ->
 	case Type of
 		?BROADCAST_ALL -> 
 			?INFO_MSG("Receive message broadcast all, ServerID: ~p Txt: ~p ~n", [ServerId, Txt]),
-			ok; %% TODO: read client ids from db server
+			service_broadcast:broadcast_all(ServerId, TimeStampBin, Txt);
 		?BROADCAST_ONLINE ->
 			?INFO_MSG("Receive message broadcast online, ServerID: ~p Txt: ~p ~n", [ServerId, Txt]),
 			service_broadcast:broadcast_online(ServerId, TimeStampBin, Txt);
