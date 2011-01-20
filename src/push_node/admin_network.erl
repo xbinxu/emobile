@@ -24,13 +24,13 @@
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 tcp_send(CtlNode, Socket, TimeStamp, SendBin) ->
-	case get(mobile_id) of 
+	case get(server_id) of 
 		undefined -> {error, "Mobile not login"};
-		MobileId -> 
+		ServerId -> 
 			case gen_tcp:send(Socket, SendBin) of
 				ok -> ok;
 				{error, Reason} ->
-					save_undelivered_message(MobileId, TimeStamp, SendBin, CtlNode),
+					save_undelivered_message(ServerId, TimeStamp, SendBin, CtlNode),
 					{error, Reason}
 			end
 	end.
@@ -73,12 +73,48 @@ on_receive_msg(MsgSize, MsgType, MsgBody) ->
 			self() ! {kick_out, "receive unkown message"}
 	end.
 
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% server login
 on_msg_login(MsgBody) ->
-	<<ServerId: 4/?NET_ENDIAN-unit:8, _/binary>> = MsgBody,	
-	?INFO_MSG("Admin ~p logined. ~n", [ServerId]),
+	<<ServerId: 4/?NET_ENDIAN-unit:8, _/binary>> = MsgBody,
+	case ctlnode_selector:get_ctl_node(ServerId) of
+		undefined -> 
+			?ERROR_MSG("configure control node for server[~p] not found, trying login to backup "
+			           "control node. ~n", [ServerId]),
+			login_backup_control_node(ServerId);
+		CtlNode when is_atom(CtlNode) ->
+			case rpc:call(CtlNode, service_lookup_mobile_node, on_mobile_login, [ServerId, erlang:node(), self()], infinity) of
+				ok -> 
+					on_login_ctlnode_success(CtlNode, ServerId);
+				{badrpc, Reason} -> 
+					?ERROR_MSG("Login mobile[~p] to control node[~p] failed: ~p, trying login to ""
+                               backup control node! ~n", [ServerId, CtlNode, Reason]),
+                    login_backup_control_node(ServerId);
+				{error, Reason} ->
+					?ERROR_MSG("Login mobile[~p] to control node[~p] failed: ~p, close connection", [ServerId, CtlNode, Reason]),		
+					exit(login_error)
+			end			
+	end.	
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+login_backup_control_node(ServerId) ->
+	BackCtlNode = ctlnode_selector:get_ctl_back_node(ServerId),
+	case rpc:call(BackCtlNode, service_lookup_mobile_node, on_mobile_login, [ServerId, erlang:node(), self()]) of
+		ok -> 
+			on_login_ctlnode_success(undefined, ServerId);
+		{badrpc, Reason} -> 
+			?CRITICAL_MSG("Login server[~p] to backup control node[~p] failed:~p, no way to rescue, "
+			              "kickout it! ~n", [ServerId, BackCtlNode, Reason]),
+			self() ! {kick_out, "No control node available."},
+			ok
+	end.	
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+on_login_ctlnode_success(_CtlNode, ServerId) ->
+	?INFO_MSG("Mobile[~p] logined. ~n", [ServerId]),			
 	put(server_id, ServerId),
-	ok.
+	ok.	
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% keep connection heart-beat 
