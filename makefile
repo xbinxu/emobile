@@ -2,26 +2,28 @@ ROOT_DIR  = $(shell pwd)
 OUT_DIR   = $(ROOT_DIR)/ebin
 
 
-#ERL_ROOT  ?= $(shell erl -noshell -eval 'io:format("~s~n", [code:root_dir()]).' -s init stop)
-#ERTS_ROOT ?= $(ERL_ROOT)/usr
+%.o: override ERL_ROOT  ?= $(shell erl -noshell -eval 'io:format("~s~n", [code:root_dir()]).' -s init stop)
+%.o: override ERTS_ROOT ?= $(ERL_ROOT)/usr
 
-#INCLUDES += -I$(ERTS_ROOT)/include
-#LIBS     += -L$(ERTS_ROOT)/lib -lerts
+%.o: override INCLUDES += -I$(ERTS_ROOT)/include
+%.o: override LIBS     += -L$(ERTS_ROOT)/lib -lerts
 
-#EI_ROOT  ?= $(shell erl -noshell -eval 'io:format("~s~n", [code:lib_dir(erl_interface)]).' -s init stop)
+%.o: override EI_ROOT  ?= $(shell erl -noshell -eval 'io:format("~s~n", [code:lib_dir(erl_interface)]).' -s init stop)
 
-#INCLUDES += -I$(EI_ROOT)/include
-#LIBS     += -L$(EI_ROOT)/lib -lei -lerl_interface -lrt
+%.o: override INCLUDES += -I$(EI_ROOT)/include
+%.o: override LIBS     += -L$(EI_ROOT)/lib -lei -lerl_interface -lrt
 
-#ifeq ($(shell uname), Darwin)
-#  OPTIONS   += -fno-common -bundle -undefined suppress -flat_namespace
-#  USR_LOCAL = /opt/local
-#else
-#  USR_LOCAL = /usr/local
-#endif
+ifeq ($(shell uname), Darwin)
+  %.o: override OPTIONS   += -fno-common -bundle -undefined suppress -flat_namespace
+  %.o: override USR_LOCAL = /opt/local
+else
+  %.o: override USR_LOCAL = /usr/local
+endif
 
-#INCLUDES += -I$(USR_LOCAL)/include
-#LIBS     += -L$(USR_LOCAL)/lib
+%.o: override INCLUDES += -I$(USR_LOCAL)/include
+%.o: override LIBS     += -L$(USR_LOCAL)/lib
+
+export %.o:INCLUDES %.o:LIBS
 
 EINCLUDES  ?= $(shell for loop in `find . -name "*.hrl" -type f -print | xargs echo | sed "s/\.\///g" | sed "s/\/\w*\.hrl//g"`; \
                       do \
@@ -47,15 +49,15 @@ include makefile.inc
 all: compile
 compile: subdirs
 
+subdirs:override SUBDIRS = $(filter-out $(IGNORE_DIRS), $(shell ls -F | grep /$ | sed "s/\///g"))
+
 # the subdirs target compiles any code in
 # sub-directories
-subdirs:
-	cd src && make
-	cd mysql && make
-
+subdirs: 
+	for dir in $(SUBDIRS); do \
+		cd $$dir && make && cd ..; \
+	done 
 
 # remove all the code
 clean:
 	rm -rf $(OUT_DIR)/*.beam $(OUT_DIR)/erl_crash.dump
-	cd src && make clean
-	cd mysql && make clean
