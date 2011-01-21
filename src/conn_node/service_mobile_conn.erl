@@ -89,6 +89,7 @@ on_ctlnode_startup(CtlNode) ->
 %% provide this mothod to be called by push node
 broadcast_online(ServerId, TimeStampBin, MsgBin) ->
 	TimeStamp = emobile_message:decode_timestamp(TimeStampBin),
+	SleepMs   = emobile_config:get_option(broadcast_sleep),
 	case ets:tab2list(ets_mobile_id2pid) of
 		[] -> ok;
 		L ->
@@ -101,7 +102,7 @@ broadcast_online(ServerId, TimeStampBin, MsgBin) ->
 													   			1: 4/?NET_ENDIAN-unit:8,
 													   			MobileId: 4/?NET_ENDIAN-unit:8,
 													   			MsgBin/binary>>),
-						timer:sleep(5)
+						timer:sleep(SleepMs)
 				end,
 			lists:foreach(F, L),
 			ok

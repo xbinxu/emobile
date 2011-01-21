@@ -154,9 +154,10 @@ handle_info({timeout, _TimerRef, delete_expired_offline_msg}, State) ->
 	%% check delete expired offline message at early morning
 	case lists:member(HH, [4, 5, 6]) of
 		true ->
+			ExpiredDays = emobile_config:get_option(offline_msg_expired),
 			F = fun(#undelivered_msgs{id=Id, timestamp={DateSave, _}}, DList) ->
 						Days = calendar:date_to_gregorian_days(DateNow) - calendar:date_to_gregorian_days(DateSave),
-						case Days > 15 of 
+						case Days > ExpiredDays of 
 							true -> [Id | DList];
 							false -> DList
 						end

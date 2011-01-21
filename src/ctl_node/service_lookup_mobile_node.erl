@@ -337,6 +337,7 @@ broadcast_all_impl(From, TimeStampBin, MsgBin, ReadSQL, Counter) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 broadcast_uid_list(From, Uid_L, TimeStampBin, MsgBin) ->
 	TimeStamp = emobile_message:decode_timestamp(TimeStampBin),
+	SleepMs   = emobile_config:get_option(broadcast_sleep),
 	F = fun(MobileId) ->
 				MsgSize = 2+2+4+8+4+4+byte_size(MsgBin),
 				SendBin = <<MsgSize:2/?NET_ENDIAN-unit:8,
@@ -369,7 +370,7 @@ broadcast_uid_list(From, Uid_L, TimeStampBin, MsgBin) ->
 					Result ->
 						?ERROR_MSG("dirty_read result: ~p ~n", [Result])
 				end,
-				timer:sleep(5)
+				timer:sleep(SleepMs)
 		end,
 	lists:foreach(F, Uid_L),
 	ok.
