@@ -1,6 +1,7 @@
 %% Author: Administrator
 %% Created: 2011-1-17
 %% Description: TODO: Add description to mobile_loop
+
 -module(mobile_loop).
 
 %%
@@ -65,7 +66,7 @@ loop([Socket, LastMsg]) ->
 		{timeout, _TimerRef, login_timer} -> %% stop process if client doesn't login in time
 			case get(mobile_id) of 
 				undefined ->
-					?ERROR_MSG("Client connection does not login in 30 seconds. ~n", []),
+					?ERROR_MSG("Client connection does not login in 30 seconds, kickout it. ~n", []),
 					erlang:garbage_collect(self());
 				_ ->
 					erlang:garbage_collect(self()),

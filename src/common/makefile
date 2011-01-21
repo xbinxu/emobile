@@ -7,7 +7,7 @@ include ../../makefile.inc
 all: compile
 
 MODS = $(wildcard *.erl)
-compile: ${MODS:%.erl=%.beam}
+compile: ${MODS:%.erl=$(OUT_DIR)/%.beam}
 
 clean:
 	rm -rf *.beam erl_crash.dump

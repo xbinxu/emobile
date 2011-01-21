@@ -7,10 +7,13 @@ include ../../makefile.inc
 all: compile cfg
 
 MODS = $(wildcard *.erl)
-compile: ${MODS:%.erl=%.beam}
+APPS = $(wildcard *.app)
+compile: ${MODS:%.erl=$(OUT_DIR)/%.beam}
 
-cfg:
-	cp *.app $(ROOT_DIR)/ebin
+cfg: ${APPS:%.app=$(OUT_DIR)/%.app}
 
+$(OUT_DIR)/%.app:%.app
+	cp $< $(ROOT_DIR)/ebin
+	
 clean:
 	rm -rf *.beam erl_crash.dump

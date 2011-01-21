@@ -7,17 +7,17 @@ include ../makefile.inc
 all: compile subdirs
 
 MODS = $(wildcard *.erl)
-compile: ${MODS:%.erl=%.beam}
+compile: ${MODS:%.erl=$(OUT_DIR)/%.beam}
 
 subdirs:
-	cd common && ROOT_DIR=$(ROOT_DIR) make
-	cd ctl_node && ROOT_DIR=$(ROOT_DIR) make
-	cd push_node && ROOT_DIR=$(ROOT_DIR) make
-	cd conn_node && ROOT_DIR=$(ROOT_DIR) make	
+	cd common && make
+	cd ctl_node && make
+	cd push_node && make
+	cd conn_node && make	
 
 clean:
 	rm -rf *.beam erl_crash.dump
-	cd common && ROOT_DIR=$(ROOT_DIR) make clean
-	cd ctl_node && ROOT_DIR=$(ROOT_DIR) make clean
-	cd push_node && ROOT_DIR=$(ROOT_DIR) make clean
-	cd conn_node && ROOT_DIR=$(ROOT_DIR) make clean
+	cd common && make clean
+	cd ctl_node && make clean
+	cd push_node && make clean
+	cd conn_node && make clean

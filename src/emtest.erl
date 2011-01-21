@@ -51,7 +51,6 @@ load_test(Low, High) ->
 			login_load("192.168.9.149", Port, MobileId),
 			timer:sleep(5)
 		end,
-	
 	spawn(fun() -> lists:foreach(F, lists:seq(Low, High)) end),
 	ok.
 
