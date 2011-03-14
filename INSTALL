@@ -1,0 +1,155 @@
+EMOBILE - ERLANG 无线消息PUSH广播服务集群
+
+安装说明（以CENT OS为例):
+1. 安装ERLANG 5.8.2(R14B01)或更新的版本.
+   a). 从http://www.erlang.org/download.html下载souce版本的安装包(otp_src_R14B01.tar.gz).
+       
+       wget http://www.erlang.org/download/otp_src_R14B01.tar.gz
+       
+       *注: 如果wget未安装， 则先执行yum install wget安装wget
+       
+   b). 下载安装以下包:
+        yum install make
+        yum install gcc
+   		yum install gcc-c++
+   		yum install ncurses
+        yum install ncurses-devel
+        yum install unixODBC
+        yum install unixODBC-devel
+        yum install openssh
+        yum install java-*-openjdk
+        
+   c). 安装erlang
+       tar zvxf otp_src_R14B01.tar.gz
+       cd otp_src_R14B01
+       ./configure --prefix=/usr/local/erlang
+       make
+       make install
+       cp /usr/local/erlang/bin/* /usr/local/bin
+       
+2. 修改linux TCP连接参数
+
+	echo 1   > /proc/sys/net/ipv4/route/gc_interval
+	echo 150 > /proc/sys/net/ipv4/route/gc_timeout
+	echo 2   > /proc/sys/net/ipv4/route/gc_elasticity
+	
+	echo 256 >/proc/sys/vm/nr_hugepages
+	
+	echo "4096 49152 131072" >/proc/sys/net/ipv4/tcp_wmem
+	echo 1024 >/proc/sys/net/ipv4/tcp_max_syn_backlog
+	echo 1024 >/proc/sys/net/core/somaxconn
+	echo 1200000 > /proc/sys/net/ipv4/tcp_max_tw_buckets
+	echo 7 >/proc/sys/net/ipv4/tcp_retries2
+	echo "600000 650000 700000" >/proc/sys/net/ipv4/tcp_mem
+	echo 0 >/proc/sys/net/ipv4/tcp_timestamps
+	echo 0 >/proc/sys/net/ipv4/tcp_window_scaling
+	echo 0 >/proc/sys/net/ipv4/tcp_sack
+	echo 330000 >/proc/sys/net/ipv4/tcp_max_orphans
+	echo "10000 62000" >/proc/sys/net/ipv4/ip_local_port_range	
+	
+3. 修改系统参数
+	
+	echo 1300000 >/proc/sys/fs/file-max
+	
+	修改进程文件数限制：
+	vi /etc/security/limits.conf 添加以下四行：
+	*               soft    noproc          20000
+	*               hard    noproc          20000
+	*               soft    nofile          500000
+	*               hard    nofile          500000	
+	
+4. 设定长主机名(以centOS 64为例)
+    × 假设当前主机名为 FZTEC-181028.
+    × 假设当前主机有两块网卡, 一个对应外网, ip为222.77.181.28, 另一个对应内网, ip为192.168.9.149
+    编辑/etc/sysconfig/network, 确认该文件存在行: HOSTNAME=FZTEC-181028
+    编辑/etc/hosts, 增加一行: 192.168.9.149	FZTEC-181028.emobile.nd	FZTEC-181028
+    注意：在部署到多台物理服务器时, 需要将其他服务器也添加到/etc/hosts中.  如: 192.168.9.150 FZTEC-181029.emobile.nd FZTEC-181028
+    运行 hostname -f, 确认该命令的输出为: FZTEC-181028.emobile.nd, 即我们设定的长主机名(FQDN)
+    
+5. 配置内网防火墙，使得4369/4000~5000端口可见(ERLANG节点间通信端口).
+
+6. 运行 erl -name abc命令， 确认可以进入erlang分布式环境。
+   以下输出即正确进入分布式ERLANG环境： 
+   	Erlang R14B01 (erts-5.8.2) [source] [64-bit] [smp:8:8] [rq:8] [async-threads:0] [kernel-poll:false]
+	Eshell V5.8.2  (abort with ^G)
+	(abc@FZTEC-009149.emobile.nd)1> q(). 回车退出
+   输入 q(). 退出.  
+    
+    
+7. 将发布包emobile.tar.gz解压, 编辑ebin\emobile.cfg配置文件。 说明如下：  
+
+%% ****** 确认将日志级别设置成 2 ****** %%
+{loglevel, 2}. 
+
+
+%% ***** 添加安卓平台网页端服务器地址: 正式上线后由林琛提供 ******%% 
+{admin_list, ["127.0.0.1", 
+              "192.168.235.11"
+              ]}.
+
+
+ 
+%% ***** 帐号服务器数据库访问配置（如有变化会通知） ****** %%
+{account_db, {"121.207.254.59",      %% IP地址
+              3306,                  %% 端口
+              "bbs_hiapk",           %% 用户名
+              "mYZFuzjEeHu5VdZA",    %% 密码
+              "bbs_android",         %% 数据库名
+              "select distinct uid from cdb_uc_members where uid >= ~p and uid <= ~p" %% 选取UID的SQL语句, 注意不要修改where子句
+              }}. 
+
+
+
+%% ***** 群发休眠时间，无需更改 ****** %%
+{broadcast_sleep, 5}.
+
+
+
+%% ***** 离线消息保存天数，如有调整林琛会下单修改 ****** %%
+{offline_msg_expired, 15}.
+           
+                        
+%% ***** 将 @ 后的 emobile.nd.cn 更改成 `hostname -f` 的输出， 即本机的长主机名(FQDN) ***** %%
+{emctl_nodes, [
+               %% {StartUID, EndUID, node}
+               {     1, 200000, 'emctl_1_200000@emobile.nd.cn'},
+               {200001, 400000, 'emctl_200001_400000@emobile.nd.cn'}
+               ]}.
+                
+               
+%% ***** 将 @ 后的 emobile.nd.cn 更改成 `hostname -f` 的输出， 即本机的长主机名(FQDN) ***** %%
+{emctl_back_nodes, [
+                    'emctl_back_1@emobile.nd.cn',
+                    'emctl_back_2@emobile.nd.cn'
+                    ]}.
+                    
+                    
+%% ***** 将 @ 后的 emobile.nd.cn 更改成 `hostname -f` 的输出， 即本机的长主机名(FQDN) ***** %%
+%% ***** 将192.168.9.149更改成本机外网地址，并确认配置防火墙9510端口公网可见 ***** %%
+{empush_nodes, [
+                {{"192.168.9.149", 9510},'empush_1@emobile.nd.cn'}
+               ]}.
+               
+               
+%% ***** 将 @ 后的 emobile.nd.cn 更改成 `hostname -f` 的输出， 即本机的长主机名(FQDN) ***** %%
+%% ***** 将192.168.9.149更改成本机外网地址，并确认配置防火墙9021..9026端口公网可见 ***** %%
+
+{emconn_nodes, [
+                {{"192.168.9.149", 9021}, 'emconn_1@emobile.nd.cn'},
+                {{"192.168.9.149", 9022}, 'emconn_2@emobile.nd.cn'},
+                {{"192.168.9.149", 9023}, 'emconn_3@emobile.nd.cn'},
+                {{"192.168.9.149", 9024}, 'emconn_4@emobile.nd.cn'},
+                {{"192.168.9.149", 9025}, 'emconn_5@emobile.nd.cn'},
+                {{"192.168.9.149", 9026}, 'emconn_6@emobile.nd.cn'}
+               ]}.   
+               
+%% ***** 将 @ 后的 emobile.nd.cn 更改成 `hostname -f` 的输出， 即本机的长主机名(FQDN) ***** %%
+%% ***** 将192.168.9.149更改成本机外网地址，并确认配置防火墙9527,9528端口公网可见 ***** %%
+{emlb_nodes, [                                                                            
+                {{"192.168.9.149", 9527}, 'emlb_1@emobile.nd.cn'},
+                {{"192.168.9.149", 9528}, 'emlb_2@emobile.nd.cn'}
+             ]}. 
+    
+	
+	
+	

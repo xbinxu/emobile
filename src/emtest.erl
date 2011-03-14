@@ -13,7 +13,7 @@
 %%
 %% Exported Functions
 %%
--export([test/0, load_test/2, login/3, send_message/3, ping/1, broadcast_msg/2, broadcast_all/2]).
+-export([test/0, load_test/2, login/1, get_conn_addr/2, send_message/3, ping/1, broadcast_msg/2, broadcast_all/2]).
 
 %%
 %% API Functions
@@ -22,14 +22,13 @@
 
 test() ->
 	loglevel:set(5),
-	login("192.168.9.149", 9021, 311001),
-	login("192.168.9.149", 9022, 311002),	
-	login("192.168.9.149", 9023, 311003),
-	login("192.168.9.149", 9021, 351001),
-	login("192.168.9.149", 9022, 351002),	
-	login("192.168.9.149", 9023, 351003),
-	login("192.168.9.149", 9021, 3500001),
-	login("192.168.9.149", 9510, 0),
+	login(311001),
+	login(311002),	
+	login(311003),
+	login(351001),
+	login(351002),	
+	login(351003),
+	login(3500001),
 	
 %% 	timer:sleep(999),
 	
@@ -40,7 +39,6 @@ test() ->
 	send_message(311002, 351002, "fuck5"),
 	send_message(311003, 351001, "fuck6"),		
 	send_message(311003, 3500001, "send message through backup ctl node"),
-	broadcast_msg(0, "fuck you all"),
 	ok.
 
 load_test(Low, High) ->
@@ -54,11 +52,51 @@ load_test(Low, High) ->
 	spawn(fun() -> lists:foreach(F, lists:seq(Low, High)) end),
 	ok.
 
+get_conn_addr(Ip, Port) ->
+	case gen_tcp:connect(Ip, Port, [binary, {packet, 0}, {active, once}]) of
+		{ok, Sock} -> 
+			case gen_tcp:send(Sock, <<4: 2/?NET_ENDIAN-unit:8, ?MSG_LOOKUP_SERVER: 2/?NET_ENDIAN-unit:8>>) of
+				ok ->
+					wait_full_conn_addr_response(Sock, <<>>);
+				{error, Reason} ->
+					{error, Reason}
+			end;
+		{error, Reason} ->
+				{error, Reason}
+	end.
+
+wait_full_conn_addr_response(Sock, LastBin) ->
+	receive 
+		{tcp, Sock, Bin} ->
+			io:format("receive binary data: ~p ~n", [Bin]),
+			Data = <<LastBin/binary, Bin/binary>>,
+			case byte_size(Data) >= 10 of
+				true ->
+					<<_: 2/?NET_ENDIAN-unit:8,
+                      ?MSG_SERVER_ADDR: 2/?NET_ENDIAN-unit:8,
+                      AA: 1/unit:8,
+                      BB: 1/unit:8,
+                      CC: 1/unit:8,
+                      DD: 1/unit:8,
+                      Port: 2/?NET_ENDIAN-unit:8,
+                      _/binary>> = Data,
+                    gen_tcp:close(Sock),
+                    {ok, {{AA, BB, CC, DD}, Port}};
+                 false ->
+                    wait_full_conn_addr_response(Sock, Data)
+           end;
+       Other ->
+           io:format("receive ~p ~n", [Other])
+     end.
+
+							
 login_load(Ip, Port, MobileId) ->
 	spawn(fun() -> test_client(Ip, Port, MobileId) end),
 	ok.
 
-login(Ip, Port, MobileId) ->
+login(MobileId) ->
+	{ok, {Ip, Port}} = get_conn_addr("192.168.9.149", 9527),
+	io:format("conn to ~p for ~p ~n", [{Ip, Port}, MobileId]),
 	Pid = spawn(fun() -> test_client(Ip, Port, MobileId) end),
 	put(MobileId, Pid),
 	ok.

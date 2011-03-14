@@ -14,7 +14,8 @@
 -export([print_ctl_nodes/1, 
 		 print_ctl_back_nodes/1,
 		 print_conn_nodes/1,
-		 print_push_nodes/1]).
+		 print_push_nodes/1,
+		 print_lb_nodes/1]).
 
 %%
 %% API Functions
@@ -86,6 +87,22 @@ print_push_nodes(HostName) ->
 				end
 		end,
 	lists:foreach(F, CtlNodes).
+
+print_lb_nodes(HostName) ->
+	application:start(mnesia),
+	emobile_config:start(),
+	LbNodes = emobile_config:get_option(emlb_nodes),
+	
+	F = fun({_, Node}) ->
+				[NodeName, NodeHostName] = string:tokens(atom_to_list(Node), "@"),
+				case NodeHostName =:= HostName of 
+					true ->
+						io:format("~p ", [list_to_atom(NodeName)]);
+					false -> 
+						void
+				end
+		end,
+	lists:foreach(F, LbNodes).
 
 
 

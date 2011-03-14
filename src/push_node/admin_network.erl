@@ -68,6 +68,7 @@ on_receive_msg(MsgSize, MsgType, MsgBody) ->
 		?MSG_LOGIN -> on_msg_login(MsgBody);
 		?MSG_DELIVER -> on_msg_deliver(MsgSize, MsgBody);
 		?MSG_BROADCAST -> on_msg_broadcast(MsgBody);
+		?MSG_LOOKUP_CLIENT -> on_msg_lookupclient(MsgBody);
 		_ -> 
 			?ERROR_MSG("receive unkown message: ~p ~p ~p ~n", [MsgSize, MsgType, MsgBody]),
 			self() ! {kick_out, "receive unkown message"}
@@ -139,6 +140,13 @@ on_msg_deliver(MsgSize, MsgBody) ->
 	<<SrcMobileId:4/?NET_ENDIAN-unit:8, 
 	  _TimeStamp:8/binary, 
       TargetNum: 4/?NET_ENDIAN-unit:8>> = binary:part(MsgBody, 0, 16),
+
+    %% send back message result
+	self() ! {tcp_send_ping, <<12: 2/?NET_ENDIAN-unit:8,
+                               ?MSG_RESULT: 2/?NET_ENDIAN-unit:8,
+                               ?MSG_DELIVER: 2/?NET_ENDIAN-unit:8,
+                               0: 2/?NET_ENDIAN-unit:8,
+                               0: 4/?NET_ENDIAN-unit:8>>},
 
 	case TargetNum of
 		0 -> ok;
@@ -252,6 +260,13 @@ on_msg_broadcast(MsgBody) ->
 	  ServerId: 4/?NET_ENDIAN-unit:8,
 	  _TimeStamp: 8/binary,
 	  Txt/binary>> = MsgBody,
+
+    %% send back message result
+	self() ! {tcp_send_ping, <<12: 2/?NET_ENDIAN-unit:8,
+                               ?MSG_RESULT: 2/?NET_ENDIAN-unit:8,
+                               ?MSG_BROADCAST: 2/?NET_ENDIAN-unit:8,
+                               0: 2/?NET_ENDIAN-unit:8,
+                               0: 4/?NET_ENDIAN-unit:8>>},
 	
 	TimeStampBin = emobile_message:make_timestamp_binary(),
 
@@ -268,8 +283,28 @@ on_msg_broadcast(MsgBody) ->
 			{error, "unkown broadcast type"}
 	end.
 
-
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+on_msg_lookupclient(MsgBody) ->
+	<<MobileId: 4/?NET_ENDIAN-unit:8, _/binary>> = MsgBody,
+    Result = case ctlnode_selector:get_ctl_node(MobileId) of
+			      undefined -> 101;
+                  CtlNode ->
+						case rpc:call(CtlNode, service_lookup_mobile_node, lookup_conn_node, [MobileId]) of
+							undefined ->
+								1;
+							{badrpc, Reason} ->
+								?ERROR_MSG("RPC control node failed:~p for mobile: ~p, trying route by backup node.~n", [Reason, MobileId]),
+								1001;
+							{_ConnNode, _Pid} -> 0
+						end                  
+			  end,
+   
+	self() ! {tcp_send_ping, <<12: 2/?NET_ENDIAN-unit:8,
+                               ?MSG_RESULT: 2/?NET_ENDIAN-unit:8,
+                               ?MSG_BROADCAST: 2/?NET_ENDIAN-unit:8,
+                               Result: 2/?NET_ENDIAN-unit:8,
+                               MobileId: 4/?NET_ENDIAN-unit:8>>},
+	ok.
 
 %%
 %% Local Functions

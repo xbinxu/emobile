@@ -18,7 +18,7 @@ start_node ()
 		mkdir error_log
 	fi
 
-	PING=`erl -name admin -setcookie emobile.cookie -noshell -eval "case net_adm:ping($2@$HostName) of \
+	PING=`erl -name admin -setcookie emobile.cookie -noshell -eval "case net_adm:ping('$2@$HostName') of \
                                                                             pong -> io:format("\"ok\""); \
                                                                             pang -> io:format("\"error\"") \
 									end" -s init stop`
@@ -31,6 +31,7 @@ start_node ()
 		erl +K true +P $1 -env ERL_MAX_PORTS $4 -boot start_sasl \
 			-sasl errlog_type error \
 			-sasl sasl_error_logger "{file,  $SASL_LOG_DIR}" \
+			-kernel inet_dist_listen_min 4000 inet_dist_listen_max 5000 \
 			-name $2 -setcookie emobile.cookie -noshell -detached \
 			-eval "application:start($3)" &
 	fi
@@ -43,13 +44,13 @@ stop_node ()
 		return 1
 	fi
 
-	PING=`erl -name admin -setcookie emobile.cookie -noshell -eval "case net_adm:ping($1@$HostName) of \
+	PING=`erl -name admin -setcookie emobile.cookie -noshell -eval "case net_adm:ping('$1@$HostName') of \
                                                                             pong -> io:format("\"ok\""); \
                                                                             pang -> io:format("\"error\"") \
                                                                     end" -s init stop`
 
 	if [ $PING = "ok" ]; then
-		erl -name emobileadmin -setcookie emobile.cookie -noshell -eval "rpc:call($1@$HostName, init, stop, [])" -s init stop
+		erl -name emobileadmin -setcookie emobile.cookie -noshell -eval "rpc:call('$1@$HostName', init, stop, [])" -s init stop
 	else
 		$ECHO "node: \033[31m$1@$HostName\033[0m is already down, skip it"
 	fi
@@ -63,7 +64,7 @@ start_ctl_nodes ()
 		return 1
 	fi
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_back_nodes(\"$HostName\")" -s init stop`
 	for node in $Nodes
@@ -92,7 +93,7 @@ stop_ctl_nodes ()
 		return 1
 	fi
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_nodes(\"$HostName\")" -s init stop`
 	for node in $Nodes
@@ -121,7 +122,7 @@ restart_ctl_nodes ()
 		return 1
 	fi
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_nodes(\"$HostName\")" -s init stop`
 	for node in $Nodes
@@ -166,7 +167,7 @@ restart_ctl_node ()
 		return 1
 	fi 
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_nodes(\"$HostName\")" -s init stop`
 	for node in $Nodes
@@ -205,7 +206,7 @@ restart_backup_ctl_node ()
 		return 1
 	fi 
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_ctl_back_nodes(\"$HostName\")" -s init stop`
 	for node in $Nodes
@@ -240,7 +241,7 @@ start_conn_nodes ()
 		return 1
 	fi
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_conn_nodes(\"$HostName\")" -s init stop`
 
@@ -262,7 +263,7 @@ stop_conn_nodes ()
 		return 1
 	fi
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_conn_nodes(\"$HostName\")" -s init stop`
 
@@ -284,7 +285,7 @@ restart_conn_nodes ()
 		return 1
 	fi
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_conn_nodes(\"$HostName\")" -s init stop`
 
@@ -317,7 +318,7 @@ restart_conn_node ()
 		return 1
 	fi 
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_conn_nodes(\"$HostName\")" -s init stop`
 	for node in $Nodes
@@ -352,7 +353,7 @@ start_push_nodes ()
 		return 1
 	fi
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_push_nodes(\"$HostName\")" -s init stop`
 
@@ -374,7 +375,7 @@ stop_push_nodes ()
 		return 1
 	fi
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_push_nodes(\"$HostName\")" -s init stop`
 
@@ -396,7 +397,7 @@ restart_push_nodes ()
 		return 1
 	fi
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_push_nodes(\"$HostName\")" -s init stop`
 
@@ -429,7 +430,7 @@ restart_push_node ()
 		return 1
 	fi 
 
-	HostName=`hostname`
+	HostName=`hostname -f`
 
 	Nodes=`erl -noshell -eval "emobile_shell:print_push_nodes(\"$HostName\")" -s init stop`
 	for node in $Nodes
@@ -454,6 +455,118 @@ restart_push_node ()
 	unset Nodes
 	unset find_node
 }
+
+#start load balance nodes if configured, see "emobile.cfg" in ./ebin directory
+start_lb_nodes ()
+{
+	if [ ! -f emobile.cfg -o ! -f emlb.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running start_lb_nodes function\033[0m"
+		return 1
+	fi
+
+	HostName=`hostname -f`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_lb_nodes(\"$HostName\")" -s init stop`
+
+	for node in $Nodes
+	do
+		$ECHO "starting mobile load balance node \033[34m$node""@""$HostName\033[0m ..."
+		start_node $1 $node emlb $2
+	done
+
+	unset Nodes
+	unset HostName
+}
+
+#stop load balance nodes if configured, see "emobile.cfg" in ./ebin directory
+stop_lb_nodes ()
+{
+	if [ ! -f emobile.cfg -o ! -f emlb.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running stop_lb_nodes function\033[0m"
+		return 1
+	fi
+
+	HostName=`hostname -f`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_lb_nodes(\"$HostName\")" -s init stop`
+
+	for node in $Nodes
+	do
+		$ECHO "stopping mobile load balance node \033[31m$node""@""$HostName\033[0m ..."
+		stop_node $node
+	done
+
+	unset Nodes
+	unset HostName
+}
+
+#restart conn nodes if configured, see "emobile.cfg" in ./ebin directory
+restart_lb_nodes ()
+{
+	if [ ! -f emobile.cfg -o ! -f emlb.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running restart_lb_nodes function\033[0m"
+		return 1
+	fi
+
+	HostName=`hostname -f`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_lb_nodes(\"$HostName\")" -s init stop`
+
+	for node in $Nodes
+	do
+		$ECHO "stopping mobile load balance node \033[31m$node""@""$HostName\033[0m ..."
+		stop_node $node
+	done
+
+	for node in $Nodes
+	do
+		$ECHO "starting mobile load balance node \033[34m$node""@""$HostName\033[0m ..."
+		start_node $1 $node emlb $2
+	done
+
+	unset Nodes
+	unset HostName
+}
+
+#restart load balance node if configured, see "emobile.cfg" in ./ebin directory
+restart_lb_node ()
+{
+	if [ ! -f emobile.cfg -o ! -f emlb.app ]; then
+		$ECHO "\033[31minvalid path, you must enter ebin directory before running restart_lb_node function\033[0m"
+		return 1
+	fi
+
+	if [ $# -lt 1 ]; then
+		$ECHO "\033[31minvalid param, the first param must be node name\033[0m"
+		return 1
+	fi 
+
+	HostName=`hostname -f`
+
+	Nodes=`erl -noshell -eval "emobile_shell:print_lb_nodes(\"$HostName\")" -s init stop`
+	for node in $Nodes
+	do
+		if [ "$1" = "$node" ]; then
+			find_node="true"
+		fi
+	done
+
+	if [ -z $find_node ]; then
+		$ECHO "\033[31m$1 is not a configured load balance node, please check \"emobile.cfg\"\033[0m"
+		return 1
+	fi
+
+	$ECHO "stopping mobile load balance node \033[31m$1""@""$HostName\033[0m ..."
+	stop_node $1
+	sleep 2
+	$ECHO "starting mobile load balance node \033[34m$1""@""$HostName\033[0m ..."
+	start_node $2 $1 emlb $3
+
+	unset HostName
+	unset Nodes
+	unset find_node
+}
+
 
 
 

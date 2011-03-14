@@ -2,8 +2,8 @@
 
 .SUFFIXES: .erl .beam .yrl .c .cpp .o
 
-%.o:CFLAGS = -DDYNAMIC_DRIVER -fpic -g -O2
-%.o:OPTIONS = -fpic -O2
+CFLAGS = -DDYNAMIC_DRIVER -fpic -g -O2
+OPTIONS = -fpic -O2
 
 IGNORE_DIRS = doc ebin include _SYNCAPP .git .svn
 
@@ -16,6 +16,7 @@ $(OUT_DIR)/%.beam: %.erl $(HRL_FILES)
 	@erlc $(EFLAGS) $(EINCLUDES) -o $(OUT_DIR) -W $<
 	
 $(OUT_DIR)/%.app:%.app
+	@echo updating application definition file: $< ...
 	@cp $< $(ROOT_DIR)/ebin
 	
 .cpp.o:

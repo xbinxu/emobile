@@ -3,11 +3,12 @@
 . ./functions
 
 #get server host name
-HostName=`hostname`
+HostName=`hostname -f`
 ECHO="echo -e"
 
 cd ebin
 
+stop_lb_nodes
 stop_push_nodes
 stop_conn_nodes
 stop_ctl_nodes

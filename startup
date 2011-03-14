@@ -7,7 +7,7 @@ if [ ! -d ebin ]; then
 	exit 1
 fi
 
-HostName=`hostname`
+HostName=`hostname -f`
 ECHO="echo -e"
 CtlNode_ProcessNum=4194304
 CtlNode_PortNum=2048
@@ -23,6 +23,9 @@ PushNode_PortNum=2048
 
 #cd beam directory
 cd ebin
+
+# start load balance nodes
+start_lb_nodes 100000 1024
 
 # start control and backup control nodes, see "./functions"
 start_ctl_nodes $CtlNode_ProcessNum $CtlNode_PortNum
