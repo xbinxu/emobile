@@ -24,9 +24,6 @@ PushNode_PortNum=2048
 #cd beam directory
 cd ebin
 
-# start load balance nodes
-start_lb_nodes 100000 1024
-
 # start control and backup control nodes, see "./functions"
 start_ctl_nodes $CtlNode_ProcessNum $CtlNode_PortNum
 
@@ -35,6 +32,9 @@ start_conn_nodes $ConnNode_ProcessNum $ConnNode_PortNum
 
 #start server push nodes, see "./functions"
 start_push_nodes $PushNode_ProcessNum $PushNode_PortNum
+
+# start load balance nodes
+start_lb_nodes 100000 1024
 
 unset HostName
 unset ECHO

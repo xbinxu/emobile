@@ -72,8 +72,8 @@ EMOBILE - ERLANG 无线消息PUSH广播服务集群
    以下输出即正确进入分布式ERLANG环境： 
    	Erlang R14B01 (erts-5.8.2) [source] [64-bit] [smp:8:8] [rq:8] [async-threads:0] [kernel-poll:false]
 	Eshell V5.8.2  (abort with ^G)
-	(abc@FZTEC-009149.emobile.nd)1> q(). 回车退出
-   输入 q(). 退出.  
+	(abc@FZTEC-009149.emobile.nd)1> q(). 
+   输入 "q()." 退出.  
     
     
 7. 将发布包emobile.tar.gz解压, 编辑ebin\emobile.cfg配置文件。 说明如下：  
@@ -89,7 +89,7 @@ EMOBILE - ERLANG 无线消息PUSH广播服务集群
 
 
  
-%% ***** 帐号服务器数据库访问配置（如有变化会通知） ****** %%
+%% ***** 帐号服务器数据库访问配置 ****** %%
 {account_db, {"121.207.254.59",      %% IP地址
               3306,                  %% 端口
               "bbs_hiapk",           %% 用户名
@@ -149,6 +149,14 @@ EMOBILE - ERLANG 无线消息PUSH广播服务集群
                 {{"192.168.9.149", 9527}, 'emlb_1@emobile.nd.cn'},
                 {{"192.168.9.149", 9528}, 'emlb_2@emobile.nd.cn'}
              ]}. 
+             
+             
+8. 运行启动脚本
+   压缩包根目录下 startup 为启动系统脚本 shutdown 为关闭系统脚本 restart 为重启系统脚本
+   请进入解压缩的目录后执行./shellname, shellname = startup or shutdown or restart
+   
+9. 检查启动是否成功
+   在本地WINDOWS系统中执行 telnet 命令， 检查 9527 9528 9021 9022 9023 9024 9025 等端口可以连通。               
     
 	
 	

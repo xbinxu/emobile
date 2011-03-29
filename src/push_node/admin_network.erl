@@ -63,6 +63,7 @@ process_received_msg(Socket, Bin) when is_binary(Bin) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 on_receive_msg(MsgSize, MsgType, MsgBody) ->
+	?INFO_MSG("Receive message: ~p ~n ~p ~n", [MsgType, MsgBody]),
 	case MsgType of
 		?MSG_PING  -> on_msg_ping(MsgSize);
 		?MSG_LOGIN -> on_msg_login(MsgBody);
@@ -286,9 +287,11 @@ on_msg_broadcast(MsgBody) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 on_msg_lookupclient(MsgBody) ->
 	<<MobileId: 4/?NET_ENDIAN-unit:8, _/binary>> = MsgBody,
+	?INFO_MSG("request to lookup client: ~p ", [MobileId]),
     Result = case ctlnode_selector:get_ctl_node(MobileId) of
 			      undefined -> 101;
                   CtlNode ->
+						?INFO_MSG("lookup from control node: ~p", [CtlNode]),
 						case rpc:call(CtlNode, service_lookup_mobile_node, lookup_conn_node, [MobileId]) of
 							undefined ->
 								1;
@@ -298,7 +301,9 @@ on_msg_lookupclient(MsgBody) ->
 							{_ConnNode, _Pid} -> 0
 						end                  
 			  end,
-   
+
+	?INFO_MSG("lookup result: ~p ~n", [Result]),
+
 	self() ! {tcp_send_ping, <<12: 2/?NET_ENDIAN-unit:8,
                                ?MSG_RESULT: 2/?NET_ENDIAN-unit:8,
                                ?MSG_BROADCAST: 2/?NET_ENDIAN-unit:8,

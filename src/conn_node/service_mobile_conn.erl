@@ -155,7 +155,7 @@ init([]) ->
 	{ok, _} = socket_server:start('MOBILE CONN TCP SERVER', IpAddr, Port, FHandlePacket, FOnChildExit),
 	
 	check_local_offline_msgs(),
-	notify_lb_svr_startup({Ip, Port}),
+%% 	notify_lb_svr_startup({Ip, Port}),
 	
 	{ok, #server{}}.	
 
@@ -285,17 +285,17 @@ check_local_offline_msgs() ->
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-notify_lb_svr_startup(ListenAddr) ->
-	LbNodes = emobile_config:get_option(emlb_nodes),
-	F = fun({_, LbNode}) ->
-				case net_adm:ping(LbNode) of
-					pong ->
-						rpc:call(LbNode, service_load_balance, add_active_conn_node, {node(), ListenAddr});
-					pang ->
-						{error, "LB node is down"}
-				end
-		end,
-	lists:foreach(F, LbNodes).
+%% notify_lb_svr_startup(ListenAddr) ->
+%% 	LbNodes = emobile_config:get_option(emlb_nodes),
+%% 	F = fun({_, LbNode}) ->
+%% 				case net_adm:ping(LbNode) of
+%% 					pong ->
+%% 						rpc:call(LbNode, service_load_balance, add_active_conn_node, [{node(), ListenAddr}]);
+%% 					pang ->
+%% 						{error, "LB node is down"}
+%% 				end
+%% 		end,
+%% 	lists:foreach(F, LbNodes).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 notify_lb_svr_shutdown() ->
@@ -303,7 +303,7 @@ notify_lb_svr_shutdown() ->
 	F = fun({_, LbNode}) ->
 				case net_adm:ping(LbNode) of
 					pong ->
-						rpc:call(LbNode, service_load_balance, remove_conn_node, node());
+						rpc:call(LbNode, service_load_balance, remove_conn_node, [node()]);
 					pang ->
 						{error, "LB node is down"}
 				end

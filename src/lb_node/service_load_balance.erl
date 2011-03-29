@@ -16,8 +16,7 @@
 
 %% --------------------------------------------------------------------
 %% External exports
--export([start_link/0, add_active_conn_node/1, remove_conn_node/1]).
-
+-export([start_link/0, remove_conn_node/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -36,9 +35,6 @@ start_link() ->
 			?CRITICAL_MSG("Start load balance server service failed: ~p ~n", [Result]),
 			Result
 	end.
-
-add_active_conn_node({Node, ListenAddr}) ->
-	gen_server:call(?MODULE, {add_active_conn_node, {Node, ListenAddr}}).
 
 remove_conn_node(Node) ->
 	gen_server:call(?MODULE, {remove_conn_node, Node}).
@@ -72,14 +68,18 @@ init([]) ->
 	case emobile_config:get_option(emconn_nodes) of 
 		[] -> {stop, bad_configuration};
 		ConnNodes ->
-			F = fun({ListenAddr, Node}, L) ->
-						case net_adm:ping(Node) of
-							pong -> [{Node, ListenAddr} | L];
-							pang -> L
+			F = fun({{CIP, CPort}, Node}, AL) ->
+						case gen_tcp:connect(CIP, CPort, [binary, {packet, 0}, {active, once}], 10) of
+							{ok, Sock} ->
+								gen_tcp:close(Sock),
+								[{Node, {CIP, CPort}} | AL];
+							{error, _} -> 
+								AL
 						end
 				end,
-			ActiveConnNodes = lists:foldr(F, [], ConnNodes),
-			{ok, #state{active_conn_nodes = ActiveConnNodes}}
+			ActConns = lists:foldr(F, [], ConnNodes),
+			erlang:start_timer(300000, self(), {check_conn_nodes, ConnNodes}),
+			{ok, #state{active_conn_nodes = ActConns}}
 	end.
 
 %% --------------------------------------------------------------------
@@ -92,11 +92,6 @@ init([]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_call({add_active_conn_node, {Node, ListenAddr}}, _From, #state{active_conn_nodes=ActiveConnNodes} = State) ->
-	NewConnNodes = [{Node, ListenAddr} | ActiveConnNodes],
-	NewState = State#state{active_conn_nodes=NewConnNodes},
-	{reply, ok, NewState};
-
 handle_call({remove_conn_node, Node}, _From, #state{active_conn_nodes=ActiveConnNodes,  node_index=NodeIndex} = State) ->
 	NewConnNodes = lists:keydelete(Node, 1, ActiveConnNodes),
 	%% update index
@@ -137,6 +132,25 @@ handle_cast(_Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
+handle_info({timeout, TimerRef, {check_conn_nodes, ConnNodes}}, #state{node_index=Index}) ->
+	erlang:cancel_timer(TimerRef),
+	F = fun({{CIP, CPort}, Node}, AL) ->
+				case gen_tcp:connect(CIP, CPort, [binary, {packet, 0}, {active, once}], 10) of
+					{ok, Sock} ->
+						gen_tcp:close(Sock),
+						[{Node, {CIP, CPort}} | AL];
+					{error, _} -> 
+						AL
+				end
+		end,
+	ActConns = lists:foldl(F, [], ConnNodes),
+	NewIndex = case Index > length(ActConns) of
+				   true -> 1;
+				   false -> Index
+			   end,
+	erlang:start_timer(300000, self(), {check_conn_nodes, ConnNodes}),
+	{noreply, #state{active_conn_nodes=ActConns, node_index=NewIndex}};
+
 handle_info(_Info, State) ->
 	{noreply, State}.
 

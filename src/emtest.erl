@@ -22,17 +22,23 @@
 
 test() ->
 	loglevel:set(5),
-	login(311001),
-	login(311002),	
-	login(311003),
+	login(1005),
 	login(351001),
 	login(351002),	
 	login(351003),
+	login(351004),
+	login(351005),
+	login(351006),
+	login(351007),
+	login(351008),
+	login(311001),
+	login(311002),
+	login(311003),	
 	login(3500001),
 	
-%% 	timer:sleep(999),
+ 	timer:sleep(999),
 	
-	send_message(311001, 351001, "fuck1"),
+	send_message(1005, 351001, "fuck1"),
 	send_message(311002, 351002, "fuck2"),
 	send_message(311003, 351003, "fuck3"),	
 	send_message(311001, 351003, "fuck4"),
@@ -68,7 +74,7 @@ get_conn_addr(Ip, Port) ->
 wait_full_conn_addr_response(Sock, LastBin) ->
 	receive 
 		{tcp, Sock, Bin} ->
-			io:format("receive binary data: ~p ~n", [Bin]),
+%% 			io:format("receive binary data: ~p ~n", [Bin]),
 			Data = <<LastBin/binary, Bin/binary>>,
 			case byte_size(Data) >= 10 of
 				true ->
@@ -95,6 +101,7 @@ login_load(Ip, Port, MobileId) ->
 	ok.
 
 login(MobileId) ->
+	%%{ok, {Ip, Port}} = get_conn_addr("121.207.242.21", 9527),
 	{ok, {Ip, Port}} = get_conn_addr("192.168.9.149", 9527),
 	io:format("conn to ~p for ~p ~n", [{Ip, Port}, MobileId]),
 	Pid = spawn(fun() -> test_client(Ip, Port, MobileId) end),
