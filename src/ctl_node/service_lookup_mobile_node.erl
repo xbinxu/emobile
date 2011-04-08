@@ -101,9 +101,9 @@ lookup_conn_node_backup(MobileId) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% broadcast all
 broadcast_all(From, TimeStampBin, MsgBin) ->
-	{Host, Port, User, Password, Database, SQL} = emobile_config:get_option(account_db),
+	{_Host, _Port, _User, _Password, _Database, SQL} = emobile_config:get_option(account_db),
 	try
-		{ok, _} = mysql:start_link(account_db, Host, Port, User, Password, Database, fun(_, _, _, _) -> void end),
+%% 		{ok, _} = mysql:start_link(account_db, Host, Port, User, Password, Database, fun(_, _, _, _) -> void end),
 		CtlNodes = emobile_config:get_option(emctl_nodes),
 		Node = node(),
 		case lists:keyfind(Node, 3, CtlNodes) of

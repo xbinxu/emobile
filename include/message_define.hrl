@@ -15,3 +15,10 @@
 -define(BROADCAST_ONLINE, 2). %% broadcast to all online clients
 
 -define(NET_ENDIAN,       little).
+
+
+%% message deliver result
+-define(SEND_OK,          0).
+-define(MSG_SAVED_CTL,    1).
+-define(MSG_SAVED_LOCAL,  2).
+-define(MSG_LOST,         3).

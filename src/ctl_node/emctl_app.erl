@@ -33,7 +33,7 @@ start(normal, _Args) ->
 			error_logger:add_report_handler(ejabberd_logger_h, LogfileName),
 			init_mnesia(),
 			emobile_config:start(),
-            {Host, Port, User, Password, Database, _SQL} = emobile_config:get_option(account_db),
+         	{Host, Port, User, Password, Database, _SQL} = emobile_config:get_option(account_db),
 	        {ok, _} = mysql:start_link(account_db, Host, Port, User, Password, Database, fun(_, _, _, _) -> void end),
 			ctlnode_selector:init(),
 			emctl_sup:start_link(),

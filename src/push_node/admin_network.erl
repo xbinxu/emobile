@@ -142,13 +142,6 @@ on_msg_deliver(MsgSize, MsgBody) ->
 	  _TimeStamp:8/binary, 
       TargetNum: 4/?NET_ENDIAN-unit:8>> = binary:part(MsgBody, 0, 16),
 
-    %% send back message result
-	self() ! {tcp_send_ping, <<12: 2/?NET_ENDIAN-unit:8,
-                               ?MSG_RESULT: 2/?NET_ENDIAN-unit:8,
-                               ?MSG_DELIVER: 2/?NET_ENDIAN-unit:8,
-                               0: 2/?NET_ENDIAN-unit:8,
-                               0: 4/?NET_ENDIAN-unit:8>>},
-
 	case TargetNum of
 		0 -> ok;
 		_ ->
@@ -161,22 +154,37 @@ on_msg_deliver(MsgSize, MsgBody) ->
 
 			?INFO_MSG("Receive message deliver,  ~p -> ~p: ~p  ~n", [SrcMobileId, TargetList, MsgContentBin]),
 
-			deliver_message(TargetList, 
-                            TimeStamp,
-                            <<MsgSize:2/?NET_ENDIAN-unit:8,
-			   			    ?MSG_DELIVER:2/?NET_ENDIAN-unit:8,
-							SrcMobileId:4/?NET_ENDIAN-unit:8,
-							TimeStampBin/binary, 												  
-							TargetNum: 4/?NET_ENDIAN-unit:8,
-							TargetListBin/binary,
-							MsgContentBin/binary>>),
-			ok
+			ResultL = deliver_message(TargetList, 
+                            		  TimeStamp,
+                                      <<MsgSize:2/?NET_ENDIAN-unit:8,
+			   			              ?MSG_DELIVER:2/?NET_ENDIAN-unit:8,
+							          SrcMobileId:4/?NET_ENDIAN-unit:8,
+							          TimeStampBin/binary, 												  
+							          TargetNum: 4/?NET_ENDIAN-unit:8,
+							          TargetListBin/binary,
+							          MsgContentBin/binary>>),
+
+			FSndResult = fun({MobileId, Result}, Bin) ->
+						      <<Result: 2/?NET_ENDIAN-unit:8,
+                                MobileId: 4/?NET_ENDIAN-unit:8,
+                                Bin/binary>>	    
+                         end,
+
+            ResultBin = lists:foldl(FSndResult, <<>>, ResultL),
+
+            MsgLeng = erlang:byte_size(ResultBin) + 6,
+
+            %% send back message result
+            self() ! {tcp_send_ping, <<MsgLeng: 2/?NET_ENDIAN-unit:8,
+                                       ?MSG_RESULT: 2/?NET_ENDIAN-unit:8,
+                                       ?MSG_DELIVER: 2/?NET_ENDIAN-unit:8,
+                                       ResultBin/binary>>}
 	end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 deliver_message(TargetList, TimeStamp, MsgBin) ->
-	F = fun(MobileId) ->
-				case ctlnode_selector:get_ctl_node(MobileId) of
+	F = fun(MobileId, L) ->
+				Result = case ctlnode_selector:get_ctl_node(MobileId) of
 					undefined ->
 						send_by_backup(undefined, MobileId, TimeStamp, MsgBin);
 					CtlNode ->
@@ -189,10 +197,10 @@ deliver_message(TargetList, TimeStamp, MsgBin) ->
 							{ConnNode, Pid} ->
 								rpc_send_message(ConnNode, CtlNode, MobileId, Pid, TimeStamp, MsgBin)
 						end
-				end
+				end,
+				[{MobileId, Result} | L]
 		end,
-	lists:foreach(F, TargetList),
-	ok.
+	lists:foldl(F, [], TargetList).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -213,7 +221,7 @@ send_by_backup(CtlNode, MobileId, TimeStamp, MsgBin) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 rpc_send_message(ConnNode, CtlNode, MobileId, Pid, TimeStamp, MsgBin) ->
 	case rpc:call(ConnNode, service_mobile_conn, send_message, [CtlNode, Pid, TimeStamp, MsgBin]) of
-		ok -> ok;
+		ok -> ?SEND_OK;
 		{badrpc, Reason} ->
 			?ERROR_MSG("RPC send message failed:~p for mobile: ~p, save undelivered message.~n", [Reason, MobileId]),
 			save_undelivered_message(MobileId, TimeStamp, MsgBin, CtlNode);
@@ -228,7 +236,7 @@ save_undelivered_message(MobileId, TimeStamp, MsgBin, CtlNode) ->
 		undefined -> {error, "message lost"}; %% abandon message when control node is not configured
 		_ -> 
 			case rpc:call(CtlNode, service_offline_msg, save_undelivered_msg, [MobileId, TimeStamp, MsgBin]) of
-				ok -> ok;
+				ok -> ?MSG_SAVED_CTL;
 				{error, Reason} ->
 					?ERROR_MSG("Save undelivered message to control node[~p] failed:~p , save it to local. ~n", [CtlNode, Reason]),
 					save_local_undelivered_msg(MobileId, TimeStamp, MsgBin, CtlNode);
@@ -241,16 +249,16 @@ save_undelivered_message(MobileId, TimeStamp, MsgBin, CtlNode) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 save_local_undelivered_msg(MobileId, TimeStamp, MsgBin, CtlNode) ->
 	case CtlNode of
-		undefined -> {error, "message lost"};
+		undefined -> ?MSG_LOST;
 		_ ->
 			Id = mnesia:dirty_update_counter(unique_ids, undelivered_msg, 1),
 			Record = #undelivered_msgs{id=Id, mobile_id=MobileId, timestamp=TimeStamp, msg_bin=MsgBin, control_node=CtlNode},
 			case mnesia:transaction(fun() -> mnesia:write(Record) end) of
 				{atomic, ok} ->
-					ok;
+					?MSG_SAVED_LOCAL;
 				{aborted, Reason} ->
 					?CRITICAL_MSG("Save undelivered message to local database failed: ~p ~n", [Reason]),
-					{error, "Database failed"}
+					?MSG_LOST
 			end
 	end.
 
@@ -306,7 +314,7 @@ on_msg_lookupclient(MsgBody) ->
 
 	self() ! {tcp_send_ping, <<12: 2/?NET_ENDIAN-unit:8,
                                ?MSG_RESULT: 2/?NET_ENDIAN-unit:8,
-                               ?MSG_BROADCAST: 2/?NET_ENDIAN-unit:8,
+                               ?MSG_LOOKUP_CLIENT: 2/?NET_ENDIAN-unit:8,
                                Result: 2/?NET_ENDIAN-unit:8,
                                MobileId: 4/?NET_ENDIAN-unit:8>>},
 	ok.

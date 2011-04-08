@@ -22,29 +22,20 @@
 
 test() ->
 	loglevel:set(5),
-	login(1005),
-	login(351001),
-	login(351002),	
-	login(351003),
-	login(351004),
-	login(351005),
-	login(351006),
-	login(351007),
-	login(351008),
-	login(311001),
-	login(311002),
-	login(311003),	
-	login(3500001),
+	login_push(),
 	
- 	timer:sleep(999),
+	login(10001),
+	check_mobile_login(10001),
 	
-	send_message(1005, 351001, "fuck1"),
-	send_message(311002, 351002, "fuck2"),
-	send_message(311003, 351003, "fuck3"),	
-	send_message(311001, 351003, "fuck4"),
-	send_message(311002, 351002, "fuck5"),
-	send_message(311003, 351001, "fuck6"),		
-	send_message(311003, 3500001, "send message through backup ctl node"),
+	login(10002),
+	check_mobile_login(10002),
+	
+	timer:sleep(999),
+	
+	push_message(10001, "test push 10001"),
+	push_message(10003, "test push 10003"),
+	
+	send_message(10001, 10002,   "test1"),
 	ok.
 
 load_test(Low, High) ->
@@ -101,11 +92,16 @@ login_load(Ip, Port, MobileId) ->
 	ok.
 
 login(MobileId) ->
-	%%{ok, {Ip, Port}} = get_conn_addr("121.207.242.21", 9527),
-	{ok, {Ip, Port}} = get_conn_addr("192.168.9.149", 9527),
+%%	{ok, {Ip, Port}} = get_conn_addr("push.hiapk.com", 9527),
+ 	{ok, {Ip, Port}} = get_conn_addr("192.168.9.149", 9527),
 	io:format("conn to ~p for ~p ~n", [{Ip, Port}, MobileId]),
 	Pid = spawn(fun() -> test_client(Ip, Port, MobileId) end),
 	put(MobileId, Pid),
+	ok.
+
+login_push() ->
+	Pid = spawn(fun() -> test_push("192.168.9.149", 9510) end),
+	put(push, Pid),
 	ok.
 
 send_message(From, To,  Message) ->
@@ -123,6 +119,38 @@ send_message(From, To,  Message) ->
 	case get(From) of
 		undefined ->
 			{error, "not login"};
+		Pid ->
+			Pid ! {tcp_send, SendBin},
+			ok
+	end.
+
+push_message(To,  Message) ->
+	MsgBin = list_to_binary(Message),
+	MsgLeng = byte_size(MsgBin) + 8 + 4 + 4 + 4 + 4,
+	
+	SendBin = <<MsgLeng: 2/?NET_ENDIAN-unit:8,
+				?MSG_DELIVER: 2/?NET_ENDIAN-unit:8,
+				0: 4/ ?NET_ENDIAN-unit:8,
+				0: 8/?NET_ENDIAN-unit:8,				
+				1 : 4/?NET_ENDIAN-unit:8,
+				To: 4/?NET_ENDIAN-unit:8,
+				MsgBin/binary>>,
+	
+	case get(push) of
+		undefined ->
+			{error, "not login"};
+		Pid ->
+			Pid ! {tcp_send, SendBin},
+			ok
+	end.
+
+check_mobile_login(MobileId) ->
+	SendBin = <<8: 2/?NET_ENDIAN-unit:8,
+                ?MSG_LOOKUP_CLIENT: 2/?NET_ENDIAN-unit:8,
+                MobileId: 4/?NET_ENDIAN-unit:8>>,
+	case get(push) of
+		undefined -> 
+			{error, "not connect push"};
 		Pid ->
 			Pid ! {tcp_send, SendBin},
 			ok
@@ -180,6 +208,93 @@ ping(MobileId) ->
 %%
 %% Local Functions
 %%
+
+test_push(Ip, Port) ->
+	case gen_tcp:connect(Ip, Port, [binary, {packet, 0}, {active, once}]) of
+		{ok, Sock} -> 
+			?INFO_MSG("login push ok", []),
+			push_loop(Ip, Port, Sock, <<>>);
+
+		{error, Reason} -> 
+			?ERROR_MSG("Push connect server NG: ~p!", [Reason]),
+			timer:sleep(4999),
+			test_push(Ip, Port)
+	end.	
+
+push_loop(Ip, Port, Sock, LastMsg) ->
+	receive
+		{tcp_closed, Sock} ->
+			?ERROR_MSG("Push lost connection to push node! ~n", []),
+			timer:sleep(2999),
+ 			test_push(Ip, Port);
+		
+		{tcp_send, Buf} ->
+			case gen_tcp:send(Sock, Buf) of
+				{error, Reason} ->
+					gen_tcp:close(Sock),
+					?ERROR_MSG("Send message FAILED: ~p, stop processing push. ~n", [Reason]);
+				ok -> 
+ 					push_loop(Ip, Port, Sock, LastMsg)
+			end;
+		
+		{tcp, Sock, Bin} ->
+			%%?INFO_MSG("Receive binary: ~p ~n", [Bin]),
+			{ok, LastMsg1} = process_push_msg(<<LastMsg/binary, Bin/binary>>),
+			inet:setopts(Sock, [{active, once}]),
+			push_loop(Ip, Port, Sock, LastMsg1)
+
+	end.	
+
+process_push_msg(Bin) ->
+	%%io:format("process received msg: ~p ~n", [Bin]),
+	case Bin of
+		<<MsgSize:2/?NET_ENDIAN-unit:8, MsgType:2/?NET_ENDIAN-unit:8, Extra/binary>> ->
+			case MsgSize =< ?MAX_MSG_SIZE of
+				true ->
+					MsgBodySize = MsgSize - 4,
+					case Extra of
+						<<MsgBody:MsgBodySize/binary, Rest/binary>> ->
+							on_push_msg(MsgSize, MsgType, MsgBody), %% call funcion that handles client messages
+							process_push_msg(Rest);
+						<<_/binary>> ->
+							%% not enough binary case
+							{ok, Bin}
+					end;
+				false ->
+					{error, Bin}
+			end;
+		
+		<<_SomeBin/binary>> ->
+			{ok, Bin}
+	end.
+
+on_push_msg(_MsgSize, MsgType, MsgBody) ->
+	case MsgType of
+		?MSG_RESULT ->
+			on_msg_result(MsgBody);
+		_ ->
+			ok
+	end.
+
+on_msg_result(MsgBody) ->
+	<<MsgType: 2/?NET_ENDIAN-unit:8,
+      Result: 2/?NET_ENDIAN-unit:8,
+	  MobileId: 4/?NET_ENDIAN-unit:8, 
+	  _OtherBin/binary>> = MsgBody,
+
+    case MsgType of
+        ?MSG_LOOKUP_CLIENT ->    
+			case MobileId of
+				0 -> ?INFO_MSG("Bug found: MobileId is not set when receive result of lookup client login.", []);
+				_ -> 
+					case Result of
+						0 -> ?INFO_MSG("Mobile: ~p has logined!", [MobileId]);
+						_ -> ?INFO_MSG("Mobile: ~p NOT login: ~p", [MobileId, Result])
+					end
+			end;
+       ?MSG_DELIVER ->
+			?INFO_MSG("push message to mobile[~p] result: ~p ~n", [MobileId, Result])
+    end.
 
 test_client(Ip, Port, MobileId) ->
 	case gen_tcp:connect(Ip, Port, [binary, {packet, 0}, {active, once}]) of
