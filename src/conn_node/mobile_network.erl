@@ -151,7 +151,16 @@ login_backup_control_node(MobileId) ->
 on_login_ctlnode_success(CtlNode, MobileId) ->
 	?INFO_MSG("Mobile[~p] logined. ~n", [MobileId]),			
 	put(mobile_id, MobileId),
-	gen_server:cast(service_mobile_conn, {on_mobile_login, MobileId, self(), CtlNode}).	
+	SendBin = <<12: 2/?NET_ENDIAN-unit:8,
+                ?MSG_RESULT: 2/?NET_ENDIAN-unit:8,
+                ?MSG_LOGIN:  2/?NET_ENDIAN-unit:8,
+                0: 2/?NET_ENDIAN-unit:8,
+                MobileId: 4/?NET_ENDIAN-unit:8>>,
+   
+	gen_server:cast(service_mobile_conn, {on_mobile_login, MobileId, self(), CtlNode}),
+    %% send back login success message to client    
+    self() ! {tcp_send_ping, SendBin},
+    ok.	
 	
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

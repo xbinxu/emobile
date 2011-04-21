@@ -13,29 +13,35 @@
 %%
 %% Exported Functions
 %%
--export([test/0, load_test/2, login/1, get_conn_addr/2, send_message/3, ping/1, broadcast_msg/2, broadcast_all/2]).
+-export([test/0, load_test/2, login/1, login_push/0, get_conn_addr/2, send_message/3, push_message/2, ping/1, check_mobile_login/1, broadcast_msg/1, broadcast_all/1]).
 
 %%
 %% API Functions
 %%
 
 
+-define(SERVER, "push.hiapk.com").
+%% -define(SERVER, "192.168.9.149").
+
+
 test() ->
 	loglevel:set(5),
 	login_push(),
 	
-	login(10001),
-	check_mobile_login(10001),
-	
+%% 	login(10001),
 	login(10002),
-	check_mobile_login(10002),
 	
-	timer:sleep(999),
+	timer:sleep(10),
 	
-	push_message(10001, "test push 10001"),
-	push_message(10003, "test push 10003"),
+%% 	check_mobile_login(10001),	
+%% 	check_mobile_login(10002),
 	
-	send_message(10001, 10002,   "test1"),
+%% 	timer:sleep(999),
+	
+%% 	push_message(10001, "test push 10001"),
+%% 	push_message(10003, "test push 10003"),
+	
+%% 	send_message(10001, 10002,   "test1"),
 	ok.
 
 load_test(Low, High) ->
@@ -92,15 +98,14 @@ login_load(Ip, Port, MobileId) ->
 	ok.
 
 login(MobileId) ->
-%%	{ok, {Ip, Port}} = get_conn_addr("push.hiapk.com", 9527),
- 	{ok, {Ip, Port}} = get_conn_addr("192.168.9.149", 9527),
+	{ok, {Ip, Port}} = get_conn_addr(?SERVER, 9527),
 	io:format("conn to ~p for ~p ~n", [{Ip, Port}, MobileId]),
 	Pid = spawn(fun() -> test_client(Ip, Port, MobileId) end),
 	put(MobileId, Pid),
 	ok.
 
 login_push() ->
-	Pid = spawn(fun() -> test_push("192.168.9.149", 9510) end),
+	Pid = spawn(fun() -> test_push(?SERVER, 9510) end),
 	put(push, Pid),
 	ok.
 
@@ -156,18 +161,18 @@ check_mobile_login(MobileId) ->
 			ok
 	end.
 
-broadcast_msg(From, Message) ->
+broadcast_msg(Message) ->
 	MsgBin = list_to_binary(Message),
 	MsgLeng = 18 + byte_size(MsgBin),
 	
 	SendBin = <<MsgLeng: 2/?NET_ENDIAN-unit:8,
 				?MSG_BROADCAST: 2/?NET_ENDIAN-unit:8,
 				?BROADCAST_ONLINE: 2/?NET_ENDIAN-unit:8,
-				From: 4/ ?NET_ENDIAN-unit:8,
+				0: 4/ ?NET_ENDIAN-unit:8,
 				0: 8/?NET_ENDIAN-unit:8,				
 				MsgBin/binary>>,
 	
-	case get(From) of
+	case get(push) of
 		undefined ->
 			{error, "not login"};
 		Pid ->
@@ -175,18 +180,18 @@ broadcast_msg(From, Message) ->
 			ok
 	end.
 
-broadcast_all(From, Message) ->
+broadcast_all(Message) ->
 	MsgBin = list_to_binary(Message),
 	MsgLeng = 18 + byte_size(MsgBin),
 	
 	SendBin = <<MsgLeng: 2/?NET_ENDIAN-unit:8,
 				?MSG_BROADCAST: 2/?NET_ENDIAN-unit:8,
 				?BROADCAST_ALL: 2/?NET_ENDIAN-unit:8,
-				From: 4/ ?NET_ENDIAN-unit:8,
+				0: 4/ ?NET_ENDIAN-unit:8,
 				0: 8/?NET_ENDIAN-unit:8,				
 				MsgBin/binary>>,
 	
-	case get(From) of
+	case get(push) of
 		undefined ->
 			{error, "not login"};
 		Pid ->
@@ -212,7 +217,7 @@ ping(MobileId) ->
 test_push(Ip, Port) ->
 	case gen_tcp:connect(Ip, Port, [binary, {packet, 0}, {active, once}]) of
 		{ok, Sock} -> 
-			?INFO_MSG("login push ok", []),
+			?INFO_MSG("push connection established.", []),
 			push_loop(Ip, Port, Sock, <<>>);
 
 		{error, Reason} -> 
@@ -309,7 +314,7 @@ test_client(Ip, Port, MobileId) ->
 					timer:sleep(2999),
 					test_client(Ip, Port, MobileId);
 				ok -> 
-                    ?INFO_MSG("login mobile: ~p ok", [MobileId]),
+                    %%?INFO_MSG("login mobile: ~p ok", [MobileId]),
 					erlang:start_timer(29999, self(), ping_server),
 					client_loop(Ip, Port, MobileId, Sock, <<>>)
 			end;
@@ -327,6 +332,7 @@ client_loop(Ip, Port, MobileId, Sock, LastMsg) ->
 			timer:sleep(2999),
 %% 			erlang:hibernate(?MODULE, test_client, [Ip, Port, MobileId]);
  			test_client(Ip, Port, MobileId);
+	
 		
 		{tcp_send, Buf} ->
 			case gen_tcp:send(Sock, Buf) of
@@ -350,7 +356,13 @@ client_loop(Ip, Port, MobileId, Sock, LastMsg) ->
                          ?MSG_PING: 2/?NET_ENDIAN-unit:8,
                          MobileId: 4/?NET_ENDIAN-unit:8>>,	
             self() ! {tcp_send, SendBin},
-			client_loop(Ip, Port, MobileId, Sock, LastMsg)
+			client_loop(Ip, Port, MobileId, Sock, LastMsg);
+
+		_ ->
+			gen_tcp:close(Sock),
+			?INFO_MSG("Close connection of mobile[~p].", [MobileId]),
+			timer:sleep(1000),
+			test_client(Ip, Port, MobileId)
 
 end.
 
@@ -383,10 +395,23 @@ on_receive_msg(MobileId, _MsgSize, MsgType, MsgBody) ->
 	case MsgType of
 		?MSG_LOGIN -> ?ERROR_MSG("client[~p] receive illegal message: MSG_LOGIN. ~n", [MobileId]);
 		?MSG_PING  -> void; %%?INFO_MSG("client[~p] receive ping. ~n", [MobileId]);
-		?MSG_DELIVER -> on_msg_deliver(MobileId, MsgBody)
+		?MSG_DELIVER -> on_client_msg_deliver(MobileId, MsgBody);
+		?MSG_RESULT -> on_client_msg_result(MsgBody)
 	end.	
 
-on_msg_deliver(_Client, MsgBody) ->
+on_client_msg_result(MsgBody) ->
+	<<MsgType: 2/?NET_ENDIAN-unit:8,
+      Result: 2/?NET_ENDIAN-unit:8,
+	  MobileId: 4/?NET_ENDIAN-unit:8, 
+	  _OtherBin/binary>> = MsgBody,
+
+    case MsgType of
+        ?MSG_LOGIN ->    
+			?INFO_MSG("login client[~p]: result: ~p ~n", [MobileId, Result]),
+			self() ! {disconnect, MobileId}
+    end.	
+
+on_client_msg_deliver(_Client, MsgBody) ->
 	<<SrcMobileId: 4/?NET_ENDIAN-unit:8, TimeStamp:8/binary, TargetNum: 4/?NET_ENDIAN-unit:8>> = binary:part(MsgBody, 0, 16),
 	TargetList = emobile_message:decode_target_list(binary:part(MsgBody, 16, TargetNum * 4), TargetNum, []),
 	MsgContent = binary:part(MsgBody, 16 + TargetNum*4, byte_size(MsgBody) - (16 + TargetNum * 4)), %% ignore client timestamp
@@ -399,5 +424,6 @@ on_msg_deliver(_Client, MsgBody) ->
 	  Sec: 1/?NET_ENDIAN-unit:8>> = TimeStamp,
 	?INFO_MSG("~p -> ~p [~p-~p-~p ~p:~p:~p]: ~n""~p ~n", 
               [SrcMobileId, TargetList, Year, Month, Day, Hour, Min, Sec, MsgContent]),
+
 	ok.
 
